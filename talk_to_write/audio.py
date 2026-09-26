@@ -81,16 +81,18 @@ class AudioRecorder:
     CHUNK_SIZE = 1024
     FORMAT = pyaudio.paInt16
 
-    def __init__(self, on_level_callback: Optional[Callable[[float], None]] = None, device_index: int = -1):
+    def __init__(self, on_level_callback: Optional[Callable[[float], None]] = None, device_index: int = -1, vad_mode: int = 2):
         self.on_level_callback = on_level_callback
         self.device_index = device_index
+        self.vad_mode = vad_mode
+        self._actual_rate = self.SAMPLE_RATE
         self.is_recording = False
         self._thread: Optional[threading.Thread] = None
         self._frames = []
         self._lock = threading.Lock()
         self._pyaudio: Optional[pyaudio.PyAudio] = None
         self._stream: Optional[pyaudio.Stream] = None
-        self._vad = webrtcvad.Vad(1) if _HAS_WEBRTC_VAD else None  # Mode 1 is more tolerant than 2
+        self._vad = webrtcvad.Vad(self.vad_mode) if _HAS_WEBRTC_VAD else None
         # Warm-up PyAudio once on initialization to eliminate ALSA probe latency
         self._ensure_pyaudio()
 
@@ -147,8 +149,23 @@ class AudioRecorder:
             if self.device_index is not None and self.device_index >= 0:
                 stream_kwargs["input_device_index"] = self.device_index
 
-            with no_alsa_err():
-                self._stream = pa.open(**stream_kwargs)
+            self._actual_rate = self.SAMPLE_RATE
+            try:
+                with no_alsa_err():
+                    self._stream = pa.open(**stream_kwargs)
+            except Exception as e:
+                print(f"[Audio] 16kHz denemesi başarısız oldu: {e}, 48kHz deneniyor...")
+                stream_kwargs["rate"] = 48000
+                self._actual_rate = 48000
+                try:
+                    with no_alsa_err():
+                        self._stream = pa.open(**stream_kwargs)
+                except Exception as e2:
+                    print(f"[Audio] 48kHz başarısız oldu: {e2}, 44.1kHz deneniyor...")
+                    stream_kwargs["rate"] = 44100
+                    self._actual_rate = 44100
+                    with no_alsa_err():
+                        self._stream = pa.open(**stream_kwargs)
 
             while True:
                 with self._lock:
@@ -198,6 +215,100 @@ class AudioRecorder:
                 self._pyaudio = None
         except Exception:
             pass
+
+    def _resample_pcm(self, raw_bytes: bytes, in_rate: int, out_rate: int = 16000) -> bytes:
+        """Simple decimation/resampling for STT fallback support."""
+        if in_rate == out_rate or not raw_bytes:
+            return raw_bytes
+        
+        count = len(raw_bytes) // 2
+        try:
+            samples = struct.unpack(f"<{count}h", raw_bytes)
+            # Basic nearest-neighbor / drop decimation
+            ratio = in_rate / out_rate
+            out_samples = []
+            for i in range(int(count / ratio)):
+                idx = int(i * ratio)
+                if idx < count:
+                    out_samples.append(samples[idx])
+            return struct.pack(f"<{len(out_samples)}h", *out_samples)
+        except Exception as e:
+            print(f"[Audio] Downsampling error: {e}")
+            return raw_bytes
+
+    def _process_dsp(self, raw_pcm: bytes, padding_ms: int = 300) -> bytes:
+        """
+        Applies Noise Gating (silencing non-speech frames) and 
+        Automatic Gain Control (AGC) on speech blocks.
+        """
+        if not raw_pcm or not self._vad:
+            return self._normalize_pcm(raw_pcm)
+
+        frame_duration_ms = 30
+        frame_size = int(self.SAMPLE_RATE * (frame_duration_ms / 1000.0) * 2)
+        total_frames = len(raw_pcm) // frame_size
+        if total_frames == 0:
+            return raw_pcm
+
+        speech_flags = []
+        for i in range(total_frames):
+            frame = raw_pcm[i * frame_size : (i + 1) * frame_size]
+            try:
+                is_speech = self._vad.is_speech(frame, self.SAMPLE_RATE)
+            except Exception:
+                is_speech = True
+            speech_flags.append(is_speech)
+
+        if not any(speech_flags):
+            print("[Audio] VAD: Belirgin konuşma bayrağı bulunamadı, sessizlik atlanıyor.")
+            return b""
+
+        # Noise Gating: Zero out silence that is far from speech
+        padding_frames = int(padding_ms / frame_duration_ms)
+        gated_frames = []
+        
+        # Keep track of first and last speech to trim edges
+        first_speech = speech_flags.index(True)
+        last_speech = len(speech_flags) - 1 - speech_flags[::-1].index(True)
+        
+        # We only care about the segment between first_speech-padding and last_speech+padding
+        start_frame = max(0, first_speech - padding_frames)
+        end_frame = min(total_frames, last_speech + 1 + padding_frames)
+        
+        active_speech_samples = []
+        zero_frame = b"\x00" * frame_size
+
+        for i in range(start_frame, end_frame):
+            frame = raw_pcm[i * frame_size : (i + 1) * frame_size]
+            
+            # Check if this frame is within padding distance of ANY speech frame
+            # To be efficient, just check the local window
+            local_start = max(0, i - padding_frames)
+            local_end = min(total_frames, i + padding_frames + 1)
+            is_near_speech = any(speech_flags[local_start:local_end])
+            
+            if is_near_speech:
+                gated_frames.append(frame)
+                active_speech_samples.extend(struct.unpack(f"<{len(frame)//2}h", frame))
+            else:
+                gated_frames.append(zero_frame)
+
+        gated_pcm = b"".join(gated_frames)
+        
+        # Automatic Gain Control (AGC) - calculate gain based on active speech only, not silence
+        target_peak = 24000
+        if active_speech_samples:
+            peak = max(abs(s) for s in active_speech_samples)
+            if peak > 20 and peak < target_peak:
+                gain = min(12.0, target_peak / peak)
+                count = len(gated_pcm) // 2
+                samples = struct.unpack(f"<{count}h", gated_pcm)
+                norm_samples = [max(-32768, min(32767, int(s * gain))) for s in samples]
+                gated_pcm = struct.pack(f"<{count}h", *norm_samples)
+                print(f"[Audio] AGC uygulandı: Peak={peak}, Gain={gain:.2f}x")
+
+        return gated_pcm
+
 
     def _trim_silence_vad(self, raw_pcm: bytes, padding_ms: int = 300) -> bytes:
         """
@@ -286,19 +397,21 @@ class AudioRecorder:
         if len(raw_pcm) < 3200:  # < 0.1s
             return b""
 
-        # 1. WebRTC VAD Silence Trimming (lead-in & lead-out dead silence removal)
-        speech_pcm = self._trim_silence_vad(raw_pcm)
-        if not speech_pcm:
-            speech_pcm = raw_pcm
+        # 0. Resample to 16kHz if fallback was used
+        if getattr(self, "_actual_rate", self.SAMPLE_RATE) != self.SAMPLE_RATE:
+            raw_pcm = self._resample_pcm(raw_pcm, self._actual_rate, self.SAMPLE_RATE)
 
-        # 2. RMS-based noise floor check (tolerates quiet/distant microphones)
-        rms = self._compute_rms(speech_pcm)
-        if rms < 0.0001:  # Absolute silence / completely disconnected mic
-            print(f"[Audio] RMS {rms:.5f} mutlak sessizlik seviyesinde, atlanıyor.")
+        # 1 & 3. DSP Pipeline: Noise Gating + AGC
+        normalized_pcm = self._process_dsp(raw_pcm)
+
+        if not normalized_pcm:
             return b""
 
-        # 3. Peak volume normalization on actual speech
-        normalized_pcm = self._normalize_pcm(speech_pcm)
+        # 2. RMS-based noise floor check
+        rms = self._compute_rms(normalized_pcm)
+        if rms < 0.0001:
+            print(f"[Audio] RMS {rms:.5f} mutlak sessizlik, atlanıyor.")
+            return b""
 
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:

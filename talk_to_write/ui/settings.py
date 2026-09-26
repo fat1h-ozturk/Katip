@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -67,6 +68,17 @@ QLineEdit, QComboBox, QTextEdit {
 QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
     border: 1px solid #6366f1;
 }
+QComboBox QAbstractItemView {
+    background-color: #27272a;
+    border: 1px solid #3f3f46;
+    selection-background-color: #4f46e5;
+    selection-color: #ffffff;
+    outline: none;
+}
+QAbstractItemView::item {
+    min-height: 28px;
+    padding: 4px 8px;
+}
 QPushButton {
     background-color: #3f3f46;
     color: #f4f4f5;
@@ -115,6 +127,21 @@ class SettingsDialog(QDialog):
         title_label = QLabel("⚡ Talk-to-Write Ayarları")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
         main_layout.addWidget(title_label)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.scroll_area.setStyleSheet("QScrollArea { background-color: transparent; border: none; } QScrollBar:vertical { width: 10px; background: #18181b; } QScrollBar::handle:vertical { background: #3f3f46; border-radius: 5px; } QScrollBar::handle:vertical:hover { background: #52525b; } QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }")
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("scrollContent")
+        scroll_content.setStyleSheet("QWidget#scrollContent { background-color: transparent; }")
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(0, 4, 10, 0)
+        content_layout.setSpacing(16)
+        
+        self.scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(self.scroll_area)
 
         # 1. AI Provider Group
         ai_group = QGroupBox("Yapay Zeka & Model Sağlayıcısı")
@@ -175,7 +202,7 @@ class SettingsDialog(QDialog):
         self.language_label = QLabel("Konuşma Dili:")
         ai_layout.addRow(self.language_label, self.language_combo)
 
-        main_layout.addWidget(ai_group)
+        content_layout.addWidget(ai_group)
 
         # 2. Shortcut & Trigger Group
         trigger_group = QGroupBox("Kısayol ve Tetikleyici")
@@ -199,7 +226,7 @@ class SettingsDialog(QDialog):
         info_lbl.setStyleSheet("color: #71717a; font-size: 11px;")
         trigger_layout.addRow(info_lbl)
 
-        main_layout.addWidget(trigger_group)
+        content_layout.addWidget(trigger_group)
 
         # 3. Audio & Microphone Group
         audio_group = QGroupBox("Mikrofon ve Ses Girişi")
@@ -213,6 +240,12 @@ class SettingsDialog(QDialog):
             self.mic_combo.addItem(dev_label, dev["index"])
         audio_layout.addRow("Mikrofon:", self.mic_combo)
 
+        self.vad_combo = QComboBox()
+        self.vad_combo.addItem("Düşük (1) - Hassas", 1)
+        self.vad_combo.addItem("Orta (2) - Dengeli", 2)
+        self.vad_combo.addItem("Yüksek (3) - Agresif", 3)
+        audio_layout.addRow("Gürültü Filtreleme (VAD):", self.vad_combo)
+
         test_mic_layout = QHBoxLayout()
         self.test_mic_btn = QPushButton("🎙️ Mikrofonu Test Et (2 sn)")
         self.test_mic_btn.clicked.connect(self._test_microphone)
@@ -223,7 +256,7 @@ class SettingsDialog(QDialog):
         test_mic_layout.addStretch()
         audio_layout.addRow("", test_mic_layout)
 
-        main_layout.addWidget(audio_group)
+        content_layout.addWidget(audio_group)
 
         # 4. Custom Vocabulary
         vocab_group = QGroupBox("Özel Kelime Dağarcığı (Custom Vocabulary)")
@@ -234,7 +267,7 @@ class SettingsDialog(QDialog):
         self.vocab_edit.setPlaceholderText("Örn: TalkToWrite, Gemini, PySide6, Docker, Kubernetes, Fatih")
         vocab_layout.addWidget(vocab_info)
         vocab_layout.addWidget(self.vocab_edit)
-        main_layout.addWidget(vocab_group)
+        content_layout.addWidget(vocab_group)
 
         # 4. Preferences Checkboxes
         pref_layout = QHBoxLayout()
@@ -242,7 +275,7 @@ class SettingsDialog(QDialog):
         self.restore_clip_check = QCheckBox("Panoyu Yapıştırma Sonrası Eski Haline Getir")
         pref_layout.addWidget(self.sound_check)
         pref_layout.addWidget(self.restore_clip_check)
-        main_layout.addLayout(pref_layout)
+        content_layout.addLayout(pref_layout)
 
         # 5. Desktop & Startup Integration Group
         desktop_group = QGroupBox("Sistem & Başlat Menüsü Entegrasyonu")
@@ -265,9 +298,9 @@ class SettingsDialog(QDialog):
         self.autostart_check.toggled.connect(self._on_autostart_toggled)
         desktop_layout.addWidget(self.autostart_check)
 
-        main_layout.addWidget(desktop_group)
+        content_layout.addWidget(desktop_group)
 
-        main_layout.addStretch()
+        content_layout.addStretch()
 
         # Bottom Buttons
         btn_layout = QHBoxLayout()
@@ -361,6 +394,11 @@ class SettingsDialog(QDialog):
         if found_idx >= 0:
             self.mic_combo.setCurrentIndex(found_idx)
 
+        vad = self.config.get("vad_mode", 2)
+        vad_idx = self.vad_combo.findData(vad)
+        if vad_idx >= 0:
+            self.vad_combo.setCurrentIndex(vad_idx)
+
         self.hotkey_edit.set_hotkey(self.config.get("hotkey", "Ctrl+Alt+Space"))
         trigger_mode = self.config.get("trigger_mode", "toggle")
         t_idx = self.trigger_mode_combo.findData(trigger_mode)
@@ -389,6 +427,7 @@ class SettingsDialog(QDialog):
         self.config.set("groq_llm_model", self.groq_llm_combo.currentData())
         self.config.set("language", self.language_combo.currentData())
         self.config.set("input_device_index", self.mic_combo.currentData())
+        self.config.set("vad_mode", self.vad_combo.currentData())
         self.config.set("hotkey", self.hotkey_edit.get_hotkey())
         self.config.set("trigger_mode", self.trigger_mode_combo.currentData())
 

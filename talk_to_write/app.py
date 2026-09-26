@@ -56,7 +56,8 @@ class TalkToWriteApp:
         self.injector = TextInjector(restore_clipboard=self.config.get("restore_clipboard", False))
         self.recorder = AudioRecorder(
             on_level_callback=lambda lvl: self.signals.level_changed.emit(lvl),
-            device_index=self.config.get("input_device_index", -1)
+            device_index=self.config.get("input_device_index", -1),
+            vad_mode=self.config.get("vad_mode", 2)
         )
 
         # UI Components: Use Wayland Layer Shell overlay (guarantees zero focus loss) if available
@@ -249,11 +250,13 @@ class TalkToWriteApp:
         self.injector.restore_clipboard = self.config.get("restore_clipboard", False)
         # Update audio input device if changed
         new_dev_idx = self.config.get("input_device_index", -1)
-        if getattr(self.recorder, "device_index", -1) != new_dev_idx:
+        new_vad_mode = self.config.get("vad_mode", 2)
+        if getattr(self.recorder, "device_index", -1) != new_dev_idx or getattr(self.recorder, "vad_mode", 2) != new_vad_mode:
             self.recorder.terminate()
             self.recorder = AudioRecorder(
                 on_level_callback=lambda lvl: self.signals.level_changed.emit(lvl),
-                device_index=new_dev_idx
+                device_index=new_dev_idx,
+                vad_mode=self.config.get("vad_mode", 2)
             )
         # Invalidate cached services so they pick up new config on next use
         self._gemini_service = None
