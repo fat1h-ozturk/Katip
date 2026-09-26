@@ -159,10 +159,14 @@ class HotkeyManager:
                 pynput_parts.append("<alt>")
             elif p in ("shift",):
                 pynput_parts.append("<shift>")
-            elif p in ("cmd", "command", "super", "win"):
+            elif p in ("cmd", "command", "super", "win", "meta"):
                 pynput_parts.append("<cmd>")
             elif p == "space":
                 pynput_parts.append("<space>")
+            elif p.startswith("f") and p[1:].isdigit():
+                pynput_parts.append(f"<{p}>")
+            elif p in ("enter", "return", "tab", "capslock", "pause", "scrolllock", "printscreen", "insert", "home", "end", "pageup", "pagedown", "up", "down", "left", "right"):
+                pynput_parts.append(f"<{p}>")
             else:
                 pynput_parts.append(p)
 
@@ -190,14 +194,30 @@ class HotkeyManager:
             "CTRL": {ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL},
             "ALT": {ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT},
             "SHIFT": {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT},
+            "SUPER": {ecodes.KEY_LEFTMETA, ecodes.KEY_RIGHTMETA},
             "SPACE": {ecodes.KEY_SPACE},
-            "F8": {ecodes.KEY_F8},
-            "F9": {ecodes.KEY_F9},
-            "F10": {ecodes.KEY_F10},
-            "F12": {ecodes.KEY_F12},
+            "RETURN": {ecodes.KEY_ENTER},
+            "ENTER": {ecodes.KEY_ENTER},
+            "TAB": {ecodes.KEY_TAB},
+            "CAPSLOCK": {ecodes.KEY_CAPSLOCK},
             "PAUSE": {ecodes.KEY_PAUSE},
             "SCROLLLOCK": {ecodes.KEY_SCROLLLOCK},
+            "PRINTSCREEN": {ecodes.KEY_SYSRQ},
+            "INSERT": {ecodes.KEY_INSERT},
+            "HOME": {ecodes.KEY_HOME},
+            "END": {ecodes.KEY_END},
+            "PAGEUP": {ecodes.KEY_PAGEUP},
+            "PAGEDOWN": {ecodes.KEY_PAGEDOWN},
+            "UP": {ecodes.KEY_UP},
+            "DOWN": {ecodes.KEY_DOWN},
+            "LEFT": {ecodes.KEY_LEFT},
+            "RIGHT": {ecodes.KEY_RIGHT},
         }
+        # F1-F24 tuşları dinamik olarak eklenir
+        for i in range(1, 25):
+            attr = f"KEY_F{i}"
+            if hasattr(ecodes, attr):
+                key_map[f"F{i}"] = {getattr(ecodes, attr)}
 
         keyboards = []
         try:

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from ..audio import get_input_devices
 from ..config import ConfigManager
+from .hotkey_recorder import HotkeyRecorderWidget
 from ..desktop import (
     install_desktop_entry,
     is_autostart_enabled,
@@ -181,8 +182,7 @@ class SettingsDialog(QDialog):
         trigger_layout = QFormLayout(trigger_group)
         trigger_layout.setSpacing(8)
 
-        self.hotkey_edit = QLineEdit()
-        self.hotkey_edit.setPlaceholderText("Ctrl+Alt+Space")
+        self.hotkey_edit = HotkeyRecorderWidget()
         trigger_layout.addRow("Genel Kısayol:", self.hotkey_edit)
 
         info_lbl = QLabel(
@@ -356,7 +356,7 @@ class SettingsDialog(QDialog):
         if found_idx >= 0:
             self.mic_combo.setCurrentIndex(found_idx)
 
-        self.hotkey_edit.setText(self.config.get("hotkey", "Ctrl+Alt+Space"))
+        self.hotkey_edit.set_hotkey(self.config.get("hotkey", "Ctrl+Alt+Space"))
 
         vocab = self.config.get("custom_vocabulary", [])
         self.vocab_edit.setText(", ".join(vocab))
@@ -380,7 +380,7 @@ class SettingsDialog(QDialog):
         self.config.set("groq_llm_model", self.groq_llm_combo.currentData())
         self.config.set("language", self.language_combo.currentData())
         self.config.set("input_device_index", self.mic_combo.currentData())
-        self.config.set("hotkey", self.hotkey_edit.text().strip())
+        self.config.set("hotkey", self.hotkey_edit.get_hotkey())
 
         raw_vocab = self.vocab_edit.text().split(",")
         vocab = [v.strip() for v in raw_vocab if v.strip()]

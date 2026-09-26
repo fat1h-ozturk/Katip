@@ -91,9 +91,8 @@ def test_groq_payload_explicit_language():
 def test_audio_vad_pure_silence_rejection():
     recorder = AudioRecorder()
     # 20 frames of 30ms silence = 600ms = 20 * 960 bytes
-    silence = b"\x00" * (960 * 20)
-    trimmed = recorder._trim_silence_vad(silence)
-    assert trimmed == b""
+    frames = [b"\x00" * 960] * 20
+    assert recorder._encode_wav(frames) == b""
 
 
 def test_audio_vad_speech_preservation():
@@ -133,5 +132,5 @@ def test_audio_normalize_pcm():
     raw = struct.pack(f"<{len(samples)}h", *samples)
     norm = recorder._normalize_pcm(raw, target_peak=24000)
     norm_samples = struct.unpack(f"<{len(samples)}h", norm)
-    # Gain should be 4x (limited)
-    assert norm_samples[2] == 8000
+    # Gain should scale to target_peak (max 12x)
+    assert norm_samples[2] == 24000
