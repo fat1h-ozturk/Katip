@@ -217,14 +217,6 @@ class SettingsDialog(QDialog):
         self.trigger_mode_combo.addItem("Bas-Konuş (Push-to-Talk) — Basılı tutunca dinler, bırakınca yazar", "push_to_talk")
         trigger_layout.addRow("Çalışma Şekli:", self.trigger_mode_combo)
 
-        info_lbl = QLabel(
-            "💡 <b>İpucu:</b> KDE Sistem Ayarları -> Kısayollar -> Yeni Komut ekleyerek "
-            "dilediğiniz tuşa <code>talk-to-write --toggle</code> (veya Bas-Konuş için "
-            "<code>--start</code> ve <code>--stop</code>) atayabilirsiniz."
-        )
-        info_lbl.setWordWrap(True)
-        info_lbl.setStyleSheet("color: #71717a; font-size: 11px;")
-        trigger_layout.addRow(info_lbl)
 
         content_layout.addWidget(trigger_group)
 
