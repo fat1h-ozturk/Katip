@@ -4,7 +4,7 @@ Allows configuring API keys, AI providers, models, hotkeys, and custom vocabular
 """
 
 from typing import Callable, Optional
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -271,10 +271,10 @@ class SettingsDialog(QDialog):
 
         self.save_btn = QPushButton("Kaydet")
         self.save_btn.setObjectName("primaryBtn")
-        self.save_btn.clicked.connect(self._save_and_close)
+        self.save_btn.clicked.connect(self._save_settings)
 
         self.cancel_btn = QPushButton("Kapat")
-        self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.clicked.connect(self.close)
 
         btn_layout.addWidget(self.test_paste_btn)
         btn_layout.addStretch()
@@ -371,7 +371,7 @@ class SettingsDialog(QDialog):
         self._update_desktop_status()
         self._on_provider_changed()
 
-    def _save_and_close(self) -> None:
+    def _save_settings(self) -> None:
         self.config.set("provider", self.provider_combo.currentData())
         self.config.set("gemini_api_key", self.gemini_key_edit.text().strip())
         self.config.set("gemini_model", self.gemini_model_combo.currentText().strip())
@@ -392,7 +392,15 @@ class SettingsDialog(QDialog):
         set_autostart(self.autostart_check.isChecked())
 
         self.config_updated.emit()
-        self.accept()
+
+        # Görsel onay: pencereyi kapatmadan butonda "Kaydedildi" göster
+        self.save_btn.setText("✓ Kaydedildi!")
+        self.save_btn.setStyleSheet("background-color: #16a34a; color: #ffffff;")
+        QTimer.singleShot(1500, self._reset_save_btn)
+
+    def _reset_save_btn(self) -> None:
+        self.save_btn.setText("Kaydet")
+        self.save_btn.setStyleSheet("")
 
     def _test_microphone(self) -> None:
         import pyaudio, struct, math

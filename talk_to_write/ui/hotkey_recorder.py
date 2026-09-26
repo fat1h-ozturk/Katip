@@ -74,6 +74,21 @@ class HotkeyRecorderWidget(QLineEdit):
         self._recording = False
         self._current_hotkey = ""
         self._held_modifiers: list[str] = []
+        self._max_held_modifiers: set[str] = set()
+
+    def _finish_capture(self, hotkey_str: str) -> None:
+        """Kısayol yakalamayı tamamlar, stili günceller ve sinyal yayar."""
+        self._current_hotkey = hotkey_str
+        self.setText(hotkey_str)
+        self.setStyleSheet(self._CAPTURED_STYLE)
+        self._recording = False
+        self._held_modifiers = []
+        self._max_held_modifiers = set()
+        self.hotkey_changed.emit(hotkey_str)
+
+        # Kısa bir süre sonra normal stile dön ve fokus bırak
+        QTimer.singleShot(600, lambda: self.setStyleSheet(self._IDLE_STYLE))
+        QTimer.singleShot(700, self.clearFocus)
 
     def set_hotkey(self, hotkey_str: str) -> None:
         """Mevcut kısayolu ayarlar (config'den yükleme için)."""
@@ -123,6 +138,16 @@ class HotkeyRecorderWidget(QLineEdit):
             mod_name = _MODIFIER_MAP[key]
             if mod_name not in self._held_modifiers:
                 self._held_modifiers.append(mod_name)
+            self._max_held_modifiers.add(mod_name)
+            qt_mods = event.modifiers()
+            if qt_mods & Qt.KeyboardModifier.ControlModifier:
+                self._max_held_modifiers.add("Ctrl")
+            if qt_mods & Qt.KeyboardModifier.AltModifier:
+                self._max_held_modifiers.add("Alt")
+            if qt_mods & Qt.KeyboardModifier.ShiftModifier:
+                self._max_held_modifiers.add("Shift")
+            if qt_mods & Qt.KeyboardModifier.MetaModifier:
+                self._max_held_modifiers.add("Super")
             self._update_display()
             return
 
@@ -140,7 +165,7 @@ class HotkeyRecorderWidget(QLineEdit):
                     return  # Tanımsız tuş, yoksay
 
         # Aktif modifier'ları topla (hem basılı tutulanlardan hem event.modifiers()'dan)
-        active_modifiers = set(self._held_modifiers)
+        active_modifiers = set(self._held_modifiers) | self._max_held_modifiers
         qt_mods = event.modifiers()
         if qt_mods & Qt.KeyboardModifier.ControlModifier:
             active_modifiers.add("Ctrl")
@@ -155,39 +180,41 @@ class HotkeyRecorderWidget(QLineEdit):
         sorted_modifiers = sorted(active_modifiers, key=lambda m: _MODIFIER_ORDER.get(m, 99))
         parts = sorted_modifiers + [key_name]
         hotkey_str = "+".join(parts)
-
-        self._current_hotkey = hotkey_str
-        self.setText(hotkey_str)
-        self.setStyleSheet(self._CAPTURED_STYLE)
-        self._recording = False
-        self._held_modifiers = []
-        self.hotkey_changed.emit(hotkey_str)
-
-        # Kısa bir süre sonra normal stile dön ve fokus bırak
-        QTimer.singleShot(600, lambda: self.setStyleSheet(self._IDLE_STYLE))
-        QTimer.singleShot(700, self.clearFocus)
+        self._finish_capture(hotkey_str)
 
     def keyReleaseEvent(self, event: QKeyEvent):
-        """Modifier bırakıldığında listeden çıkar."""
+        """Modifier bırakıldığında kontrol et: 2+ modifier basılıp bırakıldıysa kombinasyonu ata."""
         if not self._recording:
             return
 
         key = event.key()
         if key in _MODIFIER_MAP:
+            # En az 2 modifier birlikte basılıp bırakıldıysa (örn: Ctrl+Shift, Ctrl+Alt),
+            # bunu tek başına geçerli bir kısayol olarak ata!
+            if len(self._max_held_modifiers) >= 2:
+                sorted_modifiers = sorted(self._max_held_modifiers, key=lambda m: _MODIFIER_ORDER.get(m, 99))
+                hotkey_str = "+".join(sorted_modifiers)
+                self._finish_capture(hotkey_str)
+                return
+
             mod_name = _MODIFIER_MAP[key]
             if mod_name in self._held_modifiers:
                 self._held_modifiers.remove(mod_name)
+            if not self._held_modifiers:
+                self._max_held_modifiers.clear()
             self._update_display()
 
     def _start_recording(self):
         self._recording = True
         self._held_modifiers = []
+        self._max_held_modifiers = set()
         self.setText("🎹 Bir tuş kombinasyonuna basın...")
         self.setStyleSheet(self._RECORDING_STYLE)
 
     def _stop_recording(self, cancel: bool = False):
         self._recording = False
         self._held_modifiers = []
+        self._max_held_modifiers = set()
         if cancel:
             self.setText(self._current_hotkey or "")
         self.setStyleSheet(self._IDLE_STYLE)

@@ -201,3 +201,46 @@ def test_hotkey_recorder_single_letters():
         widget._start_recording()
         widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier, char.lower()))
         assert widget.get_hotkey() == char
+
+
+def test_hotkey_recorder_ctrl_shift_only():
+    """Verify pressing and releasing Ctrl+Shift captures 'Ctrl+Shift'."""
+    widget = HotkeyRecorderWidget()
+    widget._start_recording()
+
+    # Press Ctrl
+    widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Control, Qt.KeyboardModifier.ControlModifier))
+    # Press Shift
+    widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Shift, Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
+    # Release Shift
+    widget.keyReleaseEvent(QKeyEvent(QKeyEvent.Type.KeyRelease, Qt.Key.Key_Shift, Qt.KeyboardModifier.ControlModifier))
+
+    assert widget.get_hotkey() == "Ctrl+Shift"
+    assert widget.text() == "Ctrl+Shift"
+    assert widget._recording is False
+
+
+def test_hotkey_recorder_ctrl_alt_only():
+    """Verify pressing and releasing Ctrl+Alt captures 'Ctrl+Alt'."""
+    widget = HotkeyRecorderWidget()
+    widget._start_recording()
+
+    widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Control, Qt.KeyboardModifier.ControlModifier))
+    widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Alt, Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier))
+    widget.keyReleaseEvent(QKeyEvent(QKeyEvent.Type.KeyRelease, Qt.Key.Key_Alt, Qt.KeyboardModifier.ControlModifier))
+
+    assert widget.get_hotkey() == "Ctrl+Alt"
+    assert widget.text() == "Ctrl+Alt"
+    assert widget._recording is False
+
+
+def test_hotkey_recorder_single_modifier_release_ignored():
+    """Verify pressing and releasing a single modifier (Ctrl) does NOT assign it as a shortcut."""
+    widget = HotkeyRecorderWidget()
+    widget._start_recording()
+
+    widget.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Control, Qt.KeyboardModifier.ControlModifier))
+    widget.keyReleaseEvent(QKeyEvent(QKeyEvent.Type.KeyRelease, Qt.Key.Key_Control, Qt.KeyboardModifier.NoModifier))
+
+    assert widget.get_hotkey() == ""
+    assert widget._recording is True
