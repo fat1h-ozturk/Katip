@@ -262,11 +262,22 @@ class SettingsDialog(QDialog):
         content_layout.addWidget(vocab_group)
 
         # 4. Preferences Checkboxes
-        pref_layout = QHBoxLayout()
+        pref_layout = QVBoxLayout()
+        pref_layout.setSpacing(8)
+        
+        row1_layout = QHBoxLayout()
         self.sound_check = QCheckBox("Ses Geri Bildirimi (Bip sesleri)")
-        self.restore_clip_check = QCheckBox("Panoyu Yapıştırma Sonrası Eski Haline Getir")
-        pref_layout.addWidget(self.sound_check)
-        pref_layout.addWidget(self.restore_clip_check)
+        self.restore_clip_check = QCheckBox("Panoyu Eski Haline Getir")
+        row1_layout.addWidget(self.sound_check)
+        row1_layout.addWidget(self.restore_clip_check)
+        
+        row2_layout = QHBoxLayout()
+        self.terminal_paste_check = QCheckBox("Linux Terminal Uyumluluk Modu (Ctrl+Shift+V ile yapıştır)")
+        row2_layout.addWidget(self.terminal_paste_check)
+        row2_layout.addStretch()
+
+        pref_layout.addLayout(row1_layout)
+        pref_layout.addLayout(row2_layout)
         content_layout.addLayout(pref_layout)
 
         # 5. Desktop & Startup Integration Group
@@ -402,6 +413,7 @@ class SettingsDialog(QDialog):
 
         self.sound_check.setChecked(self.config.get("sound_effects", True))
         self.restore_clip_check.setChecked(self.config.get("restore_clipboard", False))
+        self.terminal_paste_check.setChecked(self.config.get("terminal_paste_mode", False))
 
         self.autostart_check.blockSignals(True)
         self.autostart_check.setChecked(is_autostart_enabled())
@@ -429,6 +441,7 @@ class SettingsDialog(QDialog):
 
         self.config.set("sound_effects", self.sound_check.isChecked())
         self.config.set("restore_clipboard", self.restore_clip_check.isChecked())
+        self.config.set("terminal_paste_mode", self.terminal_paste_check.isChecked())
 
         set_autostart(self.autostart_check.isChecked())
 

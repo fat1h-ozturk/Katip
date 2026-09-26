@@ -53,7 +53,10 @@ class TalkToWriteApp:
 
         # Core Engines
         self.sound = SoundPlayer(enabled=self.config.get("sound_effects", True))
-        self.injector = TextInjector(restore_clipboard=self.config.get("restore_clipboard", False))
+        self.injector = TextInjector(
+            restore_clipboard=self.config.get("restore_clipboard", False),
+            terminal_paste_mode=self.config.get("terminal_paste_mode", False)
+        )
         self.recorder = AudioRecorder(
             on_level_callback=lambda lvl: self.signals.level_changed.emit(lvl),
             device_index=self.config.get("input_device_index", -1),
@@ -248,6 +251,15 @@ class TalkToWriteApp:
     def _on_config_updated(self) -> None:
         self.sound.enabled = self.config.get("sound_effects", True)
         self.injector.restore_clipboard = self.config.get("restore_clipboard", False)
+        
+        # Re-initialize injector if terminal paste mode changed
+        new_term_mode = self.config.get("terminal_paste_mode", False)
+        if getattr(self.injector._backend, "terminal_paste", False) != new_term_mode:
+            self.injector = TextInjector(
+                restore_clipboard=self.config.get("restore_clipboard", False),
+                terminal_paste_mode=new_term_mode
+            )
+
         # Update audio input device if changed
         new_dev_idx = self.config.get("input_device_index", -1)
         new_vad_mode = self.config.get("vad_mode", 2)

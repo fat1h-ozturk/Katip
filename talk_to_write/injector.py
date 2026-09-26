@@ -67,8 +67,9 @@ class BaseInjector(abc.ABC):
 class LinuxInjector(BaseInjector):
     """Linux text injector using wl-copy/xclip and ydotool/xdotool."""
 
-    def __init__(self, restore_clipboard: bool = False):
+    def __init__(self, restore_clipboard: bool = False, terminal_paste: bool = False):
         super().__init__(restore_clipboard)
+        self.terminal_paste = terminal_paste
         is_linux = sys.platform.startswith("linux")
         self.has_wl_copy = is_linux and (shutil.which("wl-copy") is not None)
         self.has_wl_paste = is_linux and (shutil.which("wl-paste") is not None)
@@ -124,12 +125,18 @@ class LinuxInjector(BaseInjector):
         # 1. Try ydotool (Wayland & generic Linux input device)
         if self.has_ydotool:
             try:
-                # 29 is KEY_LEFTCTRL, 47 is KEY_V
-                res = subprocess.run(
-                    ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
-                    capture_output=True,
-                    timeout=2
-                )
+                if self.terminal_paste:
+                    # 29=LEFTCTRL, 42=LEFTSHIFT, 47=V
+                    res = subprocess.run(
+                        ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
+                        capture_output=True, timeout=2
+                    )
+                else:
+                    # 29=LEFTCTRL, 47=V
+                    res = subprocess.run(
+                        ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
+                        capture_output=True, timeout=2
+                    )
                 if res.returncode == 0:
                     return True
             except Exception as e:
@@ -138,7 +145,8 @@ class LinuxInjector(BaseInjector):
         # 2. Try xdotool (X11)
         if self.has_xdotool:
             try:
-                res = subprocess.run(["xdotool", "key", "ctrl+v"], capture_output=True, timeout=2)
+                key_combo = "ctrl+shift+v" if self.terminal_paste else "ctrl+v"
+                res = subprocess.run(["xdotool", "key", key_combo], capture_output=True, timeout=2)
                 if res.returncode == 0:
                     return True
             except Exception as e:
@@ -305,14 +313,14 @@ class MacInjector(BaseInjector):
 class TextInjector:
     """Factory and unified proxy for platform-specific text injection."""
 
-    def __init__(self, restore_clipboard: bool = False):
+    def __init__(self, restore_clipboard: bool = False, terminal_paste_mode: bool = False):
         self.restore_clipboard = restore_clipboard
         if sys.platform.startswith("win"):
             self._backend: BaseInjector = WindowsInjector(restore_clipboard=restore_clipboard)
         elif sys.platform == "darwin":
             self._backend: BaseInjector = MacInjector(restore_clipboard=restore_clipboard)
         else:
-            self._backend: BaseInjector = LinuxInjector(restore_clipboard=restore_clipboard)
+            self._backend: BaseInjector = LinuxInjector(restore_clipboard=restore_clipboard, terminal_paste=terminal_paste_mode)
 
     def get_current_clipboard(self) -> Optional[str]:
         return self._backend.get_current_clipboard()

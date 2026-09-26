@@ -35,6 +35,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "custom_vocabulary": ["TalkToWrite", "Gemini", "PySide6", "Wayland"],
     "sound_effects": True,
     "vad_mode": 2,  # 1: Low, 2: Medium, 3: High
+    "terminal_paste_mode": False,
     "language": "auto",  # "auto", "tr", "en"
     "restore_clipboard": False,
     "input_device_index": -1,
