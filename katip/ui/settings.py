@@ -1,5 +1,5 @@
 """
-Settings dialog for Talk-to-Write.
+Settings dialog for Katip.
 Allows configuring API keys, AI providers, models, hotkeys, and custom vocabulary.
 """
 
@@ -104,14 +104,14 @@ QCheckBox {
 """
 
 class SettingsDialog(QDialog):
-    """Settings modal window for configuring Talk-to-Write."""
+    """Settings modal window for configuring Katip."""
 
     config_updated = Signal()
 
     def __init__(self, config: ConfigManager, parent=None):
         super().__init__(parent)
         self.config = config
-        self.setWindowTitle("Talk-to-Write Ayarları")
+        self.setWindowTitle("Katip Ayarları")
         self.resize(540, 650)
         self.setStyleSheet(DARK_STYLE)
 
@@ -124,7 +124,7 @@ class SettingsDialog(QDialog):
         main_layout.setSpacing(16)
 
         # Title
-        title_label = QLabel("⚡ Talk-to-Write Ayarları")
+        title_label = QLabel("⚡ Katip Ayarları")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
         main_layout.addWidget(title_label)
 
@@ -256,7 +256,7 @@ class SettingsDialog(QDialog):
         vocab_info = QLabel("Sık kullandığınız isimler, teknik terimler ve kodlama kütüphaneleri (virgülle ayırın):")
         vocab_info.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         self.vocab_edit = QLineEdit()
-        self.vocab_edit.setPlaceholderText("Örn: TalkToWrite, Gemini, PySide6, Docker, Kubernetes, Fatih")
+        self.vocab_edit.setPlaceholderText("Örn: Katip, Gemini, PySide6, Docker, Kubernetes, Fatih")
         vocab_layout.addWidget(vocab_info)
         vocab_layout.addWidget(self.vocab_edit)
         content_layout.addWidget(vocab_group)
@@ -358,10 +358,10 @@ class SettingsDialog(QDialog):
     def _toggle_desktop_entry(self) -> None:
         if is_desktop_installed():
             uninstall_desktop_entry()
-            QMessageBox.information(self, "Bilgi", "Talk-to-Write uygulama menüsünden kaldırıldı.")
+            QMessageBox.information(self, "Bilgi", "Katip uygulama menüsünden kaldırıldı.")
         else:
             install_desktop_entry()
-            QMessageBox.information(self, "Bilgi", "Talk-to-Write uygulama menüsüne başarıyla kaydedildi!")
+            QMessageBox.information(self, "Bilgi", "Katip uygulama menüsüne başarıyla kaydedildi!")
         self._update_desktop_status()
 
     def _on_autostart_toggled(self, checked: bool) -> None:
@@ -508,7 +508,7 @@ class SettingsDialog(QDialog):
     def _test_injection(self) -> None:
         from ..injector import TextInjector
         injector = TextInjector()
-        test_text = "🎉 Talk-to-Write başarıyla metin enjekte ediyor!"
+        test_text = "🎉 Katip başarıyla metin enjekte ediyor!"
         success = injector.inject_text(test_text)
         if success:
             QMessageBox.information(

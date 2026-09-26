@@ -1,5 +1,5 @@
 """
-Dynamic Floating Pill Overlay for Talk-to-Write.
+Dynamic Floating Pill Overlay for Katip.
 Renders an animated, draggable, glassmorphic pill widget indicating recording, audio levels, and status.
 """
 

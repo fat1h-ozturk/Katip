@@ -1,5 +1,5 @@
 """
-System Tray Icon and context menu for Talk-to-Write.
+System Tray Icon and context menu for Katip.
 """
 
 from typing import Callable, Optional
@@ -24,7 +24,7 @@ class TrayIcon(QSystemTrayIcon):
         self._build_menu()
 
         self.setIcon(self.icon_idle)
-        self.setToolTip("Talk-to-Write (Hazır)")
+        self.setToolTip("Katip (Hazır)")
         self.activated.connect(self._on_activated)
 
     def _create_icons(self) -> None:
@@ -88,7 +88,7 @@ class TrayIcon(QSystemTrayIcon):
         """)
 
         # Status header
-        self.status_action = QAction("Talk-to-Write: Hazır", self)
+        self.status_action = QAction("Katip: Hazır", self)
         self.status_action.setEnabled(False)
         self.menu.addAction(self.status_action)
 
@@ -149,13 +149,13 @@ class TrayIcon(QSystemTrayIcon):
         self.is_recording = recording
         if recording:
             self.setIcon(self.icon_recording)
-            self.setToolTip("Talk-to-Write (Kayıt Yapılıyor...)")
+            self.setToolTip("Katip (Kayıt Yapılıyor...)")
             self.status_action.setText("Durum: Dinleniyor...")
             self.toggle_action.setText("⏹️ Kaydı Durdur")
         else:
             self.setIcon(self.icon_idle)
-            self.setToolTip("Talk-to-Write (Hazır)")
-            self.status_action.setText("Talk-to-Write: Hazır")
+            self.setToolTip("Katip (Hazır)")
+            self.status_action.setText("Katip: Hazır")
             self.toggle_action.setText("🎙️ Kaydı Başlat / Durdur")
 
     def set_active_mode(self, mode: str) -> None:

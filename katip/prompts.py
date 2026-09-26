@@ -1,5 +1,5 @@
 """
-System prompts and formatting instructions for Talk-to-Write personas.
+System prompts and formatting instructions for Katip personas.
 """
 
 from typing import List

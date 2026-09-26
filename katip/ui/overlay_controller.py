@@ -24,7 +24,7 @@ class LayerOverlayController:
             cur_preload = env.get("LD_PRELOAD", "")
             env["LD_PRELOAD"] = f"{layer_so}:{cur_preload}" if cur_preload else layer_so
 
-        cmd = [sys.executable, "-m", "talk_to_write.ui.overlay_gtk"]
+        cmd = [sys.executable, "-m", "katip.ui.overlay_gtk"]
         try:
             self.process = subprocess.Popen(
                 cmd,

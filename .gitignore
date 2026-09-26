@@ -8,4 +8,4 @@ build/
 .pytest_cache/
 .coverage
 /tmp/
-talk-to-write.sock
+katip.sock

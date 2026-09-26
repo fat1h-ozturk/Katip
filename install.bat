@@ -1,13 +1,13 @@
 @echo off
 chcp 65001 >nul 2>&1
 REM ==============================================================================
-REM Talk-to-Write: One-Click Windows Setup & Start Menu Registration Script
+REM Katip: One-Click Windows Setup & Start Menu Registration Script
 REM ==============================================================================
 
 cd /d "%~dp0"
 
 echo ======================================================
-echo Talk-to-Write Windows Kurulum Sihirbazi
+echo Katip Windows Kurulum Sihirbazi
 echo ======================================================
 
 REM 1. En uygun Python surumunu tespit et (PyAudio ve ses kutuphaneleri icin 3.10-3.13 tercih edilir)
@@ -72,10 +72,10 @@ if errorlevel 1 (
 )
 
 echo [BILGI] Baslat Menusune ve Masaustune kisayol ekleniyor...
-call python -m talk_to_write --install
+call python -m katip --install
 
 echo ======================================================
 echo Kurulum Tamamlandi!
-echo Baslat Menusunden veya Masaustundeki "Talk-to-Write" simgesinden uygulamayi acabilirsiniz.
+echo Baslat Menusunden veya Masaustundeki "Katip" simgesinden uygulamayi acabilirsiniz.
 echo ======================================================
 pause

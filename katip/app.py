@@ -1,5 +1,5 @@
 """
-Main Application Coordinator for Talk-to-Write.
+Main Application Coordinator for Katip.
 Connects Audio, AI Services, Text Injector, System Tray, Floating Pill, and Hotkeys.
 """
 
@@ -33,8 +33,8 @@ class WorkerSignals(QObject):
     notify_received = Signal()
     settings_received = Signal()
 
-class TalkToWriteApp:
-    """The central Talk-to-Write application."""
+class KatipApp:
+    """The central Katip application."""
 
     def __init__(self, q_app: QApplication):
         self.q_app = q_app
@@ -233,7 +233,7 @@ class TalkToWriteApp:
     def _on_notify_running(self) -> None:
         hotkey = self.config.get("hotkey", "Ctrl+Alt+Space")
         self.tray.showMessage(
-            "Talk-to-Write",
+            "Katip",
             f"Uygulama zaten arka planda çalışıyor.\n🎙️ Dikte Kısayolu: {hotkey}",
             QSystemTrayIcon.MessageIcon.Information,
             3500

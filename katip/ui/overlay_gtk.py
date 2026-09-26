@@ -1,5 +1,5 @@
 """
-GTK4 Layer Shell Overlay for Talk-to-Write on Wayland.
+GTK4 Layer Shell Overlay for Katip on Wayland.
 Renders an ultra-smooth floating pill on the OVERLAY layer that CANNOT steal keyboard focus.
 """
 
@@ -104,7 +104,7 @@ class LayerOverlayApp:
         # Start hidden
         self.win.set_visible(False)
 
-        # Watch stdin for commands from the main Talk-to-Write process
+        # Watch stdin for commands from the main Katip process
         channel = GLib.IOChannel.unix_new(sys.stdin.fileno())
         channel.set_encoding(None)
         channel.set_flags(GLib.IOFlags.NONBLOCK)

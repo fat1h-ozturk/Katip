@@ -1,5 +1,5 @@
 import pytest
-from talk_to_write.services.gemini import GeminiService
+from katip.services.gemini import GeminiService
 
 def test_gemini_missing_api_key():
     service = GeminiService(api_key="")

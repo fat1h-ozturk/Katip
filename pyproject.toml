@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "talk-to-write"
+name = "katip"
 version = "0.2.0"
 description = "High-performance, low-latency cross-platform dictation assistant for Linux, Windows, and macOS"
 authors = [{ name = "Fatih" }]
@@ -20,10 +20,10 @@ dependencies = [
 ]
 
 [project.scripts]
-talk-to-write = "talk_to_write.__main__:main"
+katip = "katip.__main__:main"
 
 [project.gui-scripts]
-talk-to-write-gui = "talk_to_write.__main__:main"
+katip-gui = "katip.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["talk_to_write*"]
+include = ["katip*"]

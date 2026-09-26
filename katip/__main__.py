@@ -1,5 +1,5 @@
 """
-CLI and Desktop entry point for Talk-to-Write.
+CLI and Desktop entry point for Katip.
 """
 
 import argparse
@@ -9,7 +9,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from . import __version__
-from .app import TalkToWriteApp
+from .app import KatipApp
 from .desktop import (
     attach_windows_console,
     detach_windows_console,
@@ -36,13 +36,13 @@ def main():
         attach_windows_console()
 
     parser = argparse.ArgumentParser(
-        prog="talk-to-write",
-        description="Talk-to-Write: Ultra-fast AI voice dictation desktop assistant."
+        prog="katip",
+        description="Katip: Ultra-fast AI voice dictation desktop assistant."
     )
     parser.add_argument(
         "--toggle",
         action="store_true",
-        help="Send toggle trigger to running Talk-to-Write instance."
+        help="Send toggle trigger to running Katip instance."
     )
     parser.add_argument(
         "--start",
@@ -62,17 +62,17 @@ def main():
     parser.add_argument(
         "--install",
         action="store_true",
-        help="Register Talk-to-Write into OS Application Menu and install icons."
+        help="Register Katip into OS Application Menu and install icons."
     )
     parser.add_argument(
         "--uninstall",
         action="store_true",
-        help="Remove Talk-to-Write from OS Application Menu and remove icons."
+        help="Remove Katip from OS Application Menu and remove icons."
     )
     parser.add_argument(
         "--purge",
         action="store_true",
-        help="Completely purge Talk-to-Write shortcuts, autostart, and configuration data."
+        help="Completely purge Katip shortcuts, autostart, and configuration data."
     )
     parser.add_argument(
         "--autostart",
@@ -87,7 +87,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version=f"Talk-to-Write {__version__}"
+        version=f"Katip {__version__}"
     )
 
     args, unknown = parser.parse_known_args()
@@ -96,43 +96,43 @@ def main():
     if args.install:
         success = install_desktop_entry()
         if success:
-            print("[Talk-to-Write] ✓ Uygulama menüsüne başarıyla kaydedildi!")
-            print("  Artık Başlat / Uygulama Arama menüsünden 'Talk-to-Write' yazarak açabilirsiniz.")
+            print("[Katip] ✓ Uygulama menüsüne başarıyla kaydedildi!")
+            print("  Artık Başlat / Uygulama Arama menüsünden 'Katip' yazarak açabilirsiniz.")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] ✗ Uygulama menüsüne kaydedilemedi.")
+            print("[Katip] ✗ Uygulama menüsüne kaydedilemedi.")
             sys.exit(1)
 
     # 2. Handle --purge
     if args.purge:
         success = purge_all(remove_config=True)
         if success:
-            print("[Talk-to-Write] ✓ Uygulama menüsü, başlangıç kayıtları ve ayarlar tamamen temizlendi.")
+            print("[Katip] ✓ Uygulama menüsü, başlangıç kayıtları ve ayarlar tamamen temizlendi.")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] ✗ Tam temizleme sırasında hata oluştu.")
+            print("[Katip] ✗ Tam temizleme sırasında hata oluştu.")
             sys.exit(1)
 
     # 3. Handle --uninstall
     if args.uninstall:
         success = uninstall_desktop_entry()
         if success:
-            print("[Talk-to-Write] ✓ Uygulama menüsü kayıtları temizlendi.")
+            print("[Katip] ✓ Uygulama menüsü kayıtları temizlendi.")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] ✗ Kaldırma sırasında hata oluştu.")
+            print("[Katip] ✗ Kaldırma sırasında hata oluştu.")
             sys.exit(1)
 
     # 3. Handle --autostart
     if args.autostart:
         if args.autostart == "status":
             enabled = is_autostart_enabled()
-            print(f"[Talk-to-Write] Başlangıçta çalıştırma (Autostart): {'Açık ✓' if enabled else 'Kapalı ✗'}")
+            print(f"[Katip] Başlangıçta çalıştırma (Autostart): {'Açık ✓' if enabled else 'Kapalı ✗'}")
             sys.exit(0)
         else:
             enable = args.autostart == "on"
             set_autostart(enable)
-            print(f"[Talk-to-Write] Başlangıçta çalıştırma {'açıldı ✓' if enable else 'kapatıldı ✗'}.")
+            print(f"[Katip] Başlangıçta çalıştırma {'açıldı ✓' if enable else 'kapatıldı ✗'}.")
             sys.exit(0)
 
     # 4. Handle --status
@@ -140,7 +140,7 @@ def main():
         running = is_instance_running()
         desktop = is_desktop_installed()
         autostart = is_autostart_enabled()
-        print("Talk-to-Write Sistem Durumu:")
+        print("Katip Sistem Durumu:")
         print(f"  • Çalışma durumu: {'Çalışıyor (Arka Planda) ✓' if running else 'Kapalı ✗'}")
         print(f"  • Uygulama Menüsü: {'Kayıtlı ✓' if desktop else 'Kayıtlı Değil ✗'}")
         print(f"  • Otomatik Başlatma (Autostart): {'Açık ✓' if autostart else 'Kapalı ✗'}")
@@ -150,38 +150,38 @@ def main():
     if args.toggle:
         success = send_ipc_toggle()
         if success:
-            print("[Talk-to-Write] Kayıt durumu değiştirildi (Toggle sinyali iletildi).")
+            print("[Katip] Kayıt durumu değiştirildi (Toggle sinyali iletildi).")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı. Lütfen önce uygulamayı başlatın.")
+            print("[Katip] Çalışan bir Katip uygulaması bulunamadı. Lütfen önce uygulamayı başlatın.")
             sys.exit(1)
 
     if args.start:
         success = send_ipc_start()
         if success:
-            print("[Talk-to-Write] Kayıt başlatıldı (Start sinyali iletildi).")
+            print("[Katip] Kayıt başlatıldı (Start sinyali iletildi).")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı.")
+            print("[Katip] Çalışan bir Katip uygulaması bulunamadı.")
             sys.exit(1)
 
     if args.stop:
         success = send_ipc_stop()
         if success:
-            print("[Talk-to-Write] Kayıt durduruldu (Stop sinyali iletildi).")
+            print("[Katip] Kayıt durduruldu (Stop sinyali iletildi).")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı.")
+            print("[Katip] Çalışan bir Katip uygulaması bulunamadı.")
             sys.exit(1)
 
     # 6. Handle --settings
     if args.settings:
         success = open_running_settings()
         if success:
-            print("[Talk-to-Write] Ayarlar penceresi açıldı.")
+            print("[Katip] Ayarlar penceresi açıldı.")
             sys.exit(0)
         else:
-            print("[Talk-to-Write] Çalışan uygulama bulunamadı, ayarlar açılamıyor.")
+            print("[Katip] Çalışan uygulama bulunamadı, ayarlar açılamıyor.")
             sys.exit(1)
 
     # 7. Single-Instance Guard
@@ -189,7 +189,7 @@ def main():
     if is_instance_running():
         open_running_settings()
         notify_running_instance()
-        print("[Talk-to-Write] Talk-to-Write zaten arka planda çalışıyor. Ayarlar penceresi açıldı.")
+        print("[Katip] Katip zaten arka planda çalışıyor. Ayarlar penceresi açıldı.")
         print("  Dikteyi başlatmak için kısayolunuzu (Ctrl+Alt+Space) veya '--toggle' komutunu kullanabilirsiniz.")
         sys.exit(0)
 
@@ -201,23 +201,23 @@ def main():
 
     # Launch GUI Application
     q_app = QApplication(sys.argv)
-    q_app.setApplicationName("Talk-to-Write")
-    q_app.setApplicationDisplayName("Talk-to-Write")
+    q_app.setApplicationName("Katip")
+    q_app.setApplicationDisplayName("Katip")
     q_app.setQuitOnLastWindowClosed(False)
 
     # Set application icon
-    icon_svg = get_project_root() / "assets" / "talk-to-write.svg"
-    icon_png = get_project_root() / "assets" / "talk-to-write-256.png"
+    icon_svg = get_project_root() / "assets" / "katip.svg"
+    icon_png = get_project_root() / "assets" / "katip-256.png"
     if icon_svg.exists():
         q_app.setWindowIcon(QIcon(str(icon_svg)))
     elif icon_png.exists():
         q_app.setWindowIcon(QIcon(str(icon_png)))
 
-    app = TalkToWriteApp(q_app)
+    app = KatipApp(q_app)
 
     print("=" * 60)
-    print(f"🎙️  Talk-to-Write v{__version__} Başlatıldı!")
-    print("📌  Kısayol: Ctrl+Alt+Space (veya 'talk-to-write --toggle')")
+    print(f"🎙️  Katip v{__version__} Başlatıldı!")
+    print("📌  Kısayol: Ctrl+Alt+Space (veya 'katip --toggle')")
     print("⚙️  Sistem çekmecesi (System Tray) üzerinden ayarlara ulaşabilirsiniz.")
     print("=" * 60)
 

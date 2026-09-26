@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launcher script for Talk-to-Write
+# Launcher script for Katip
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -13,4 +13,4 @@ if [ -f "/usr/lib64/libgtk4-layer-shell.so.0" ]; then
     export LD_PRELOAD="/usr/lib64/libgtk4-layer-shell.so.0${LD_PRELOAD:+:$LD_PRELOAD}"
 fi
 
-exec "$PYTHON" -m talk_to_write "$@"
+exec "$PYTHON" -m katip "$@"

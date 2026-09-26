@@ -11,7 +11,7 @@ import sys
 import threading
 from typing import Callable, List, Optional, Set
 
-SOCKET_PATH = "/tmp/talk-to-write.sock"
+SOCKET_PATH = "/tmp/katip.sock"
 TCP_PORT = 49215
 
 # Safe optional imports
@@ -345,7 +345,7 @@ class HotkeyManager:
 
 
 def send_ipc_message(message: str, timeout: float = 1.0) -> Optional[str]:
-    """Sends an arbitrary message to a running Talk-to-Write instance and returns the reply."""
+    """Sends an arbitrary message to a running Katip instance and returns the reply."""
     if sys.platform.startswith("win"):
         try:
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -372,7 +372,7 @@ def send_ipc_message(message: str, timeout: float = 1.0) -> Optional[str]:
             return None
 
 def is_instance_running() -> bool:
-    """Checks if another instance of Talk-to-Write is actively running and responding."""
+    """Checks if another instance of Katip is actively running and responding."""
     return send_ipc_message("ping") == "pong"
 
 def notify_running_instance() -> bool:
@@ -384,16 +384,16 @@ def open_running_settings() -> bool:
     return send_ipc_message("open_settings") == "ok"
 
 def send_ipc_toggle() -> bool:
-    """Sends a toggle trigger to a running Talk-to-Write instance across OS platforms."""
+    """Sends a toggle trigger to a running Katip instance across OS platforms."""
     res = send_ipc_message("toggle")
     return res in ("ok", "pong", "") or res is not None
 
 def send_ipc_start() -> bool:
-    """Sends a start recording trigger to a running Talk-to-Write instance."""
+    """Sends a start recording trigger to a running Katip instance."""
     res = send_ipc_message("start")
     return res in ("ok", "pong", "") or res is not None
 
 def send_ipc_stop() -> bool:
-    """Sends a stop recording trigger to a running Talk-to-Write instance."""
+    """Sends a stop recording trigger to a running Katip instance."""
     res = send_ipc_message("stop")
     return res in ("ok", "pong", "") or res is not None

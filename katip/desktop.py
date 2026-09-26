@@ -1,5 +1,5 @@
 """
-Cross-Platform Desktop Integration & Autostart Manager for Talk-to-Write.
+Cross-Platform Desktop Integration & Autostart Manager for Katip.
 Handles application menu entry (.desktop, Start Menu shortcut), icon registration,
 and autostart-on-login configuration.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 def get_project_root() -> Path:
-    """Returns the absolute root directory of the talk-to-write project."""
+    """Returns the absolute root directory of the katip project."""
     if getattr(sys, "frozen", False):
         if hasattr(sys, "_MEIPASS"):
             return Path(sys._MEIPASS)
@@ -25,12 +25,12 @@ def get_launcher_path() -> Path:
         return Path(sys.executable).resolve()
     root = get_project_root()
     if sys.platform.startswith("win"):
-        bat_launcher = root / "bin" / "talk-to-write.bat"
+        bat_launcher = root / "bin" / "katip.bat"
         if bat_launcher.exists():
             return bat_launcher.resolve()
         return Path(sys.executable).resolve()
     else:
-        bash_launcher = root / "bin" / "talk-to-write"
+        bash_launcher = root / "bin" / "katip"
         if bash_launcher.exists():
             return bash_launcher.resolve()
         # Fallback to current python interpreter
@@ -40,11 +40,11 @@ def get_launcher_path() -> Path:
 
 def _get_linux_desktop_path() -> Path:
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return data_home / "applications" / "talk-to-write.desktop"
+    return data_home / "applications" / "katip.desktop"
 
 def _get_linux_autostart_path() -> Path:
     config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return config_home / "autostart" / "talk-to-write.desktop"
+    return config_home / "autostart" / "katip.desktop"
 
 def _install_linux_icons() -> None:
     """Installs SVG and PNG icons to user's ~/.local/share/icons/hicolor directory."""
@@ -53,19 +53,19 @@ def _install_linux_icons() -> None:
     hicolor_dir = data_home / "icons" / "hicolor"
 
     # 1. Scalable SVG
-    svg_source = root / "assets" / "talk-to-write.svg"
+    svg_source = root / "assets" / "katip.svg"
     if svg_source.exists():
         target_dir = hicolor_dir / "scalable" / "apps"
         target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(svg_source, target_dir / "talk-to-write.svg")
+        shutil.copy2(svg_source, target_dir / "katip.svg")
 
     # 2. Raster PNGs (64, 128, 256)
     for size in (64, 128, 256):
-        png_source = root / "assets" / f"talk-to-write-{size}.png"
+        png_source = root / "assets" / f"katip-{size}.png"
         if png_source.exists():
             target_dir = hicolor_dir / f"{size}x{size}" / "apps"
             target_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(png_source, target_dir / "talk-to-write.png")
+            shutil.copy2(png_source, target_dir / "katip.png")
 
     # Refresh icon cache if gtk-update-icon-cache is present
     if shutil.which("gtk-update-icon-cache"):
@@ -82,12 +82,12 @@ def _uninstall_linux_icons() -> None:
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     hicolor_dir = data_home / "icons" / "hicolor"
     
-    svg_target = hicolor_dir / "scalable" / "apps" / "talk-to-write.svg"
+    svg_target = hicolor_dir / "scalable" / "apps" / "katip.svg"
     if svg_target.exists():
         svg_target.unlink()
 
     for size in (64, 128, 256):
-        png_target = hicolor_dir / f"{size}x{size}" / "apps" / "talk-to-write.png"
+        png_target = hicolor_dir / f"{size}x{size}" / "apps" / "katip.png"
         if png_target.exists():
             png_target.unlink()
 
@@ -115,14 +115,14 @@ def _generate_desktop_entry_content() -> str:
     launcher = get_launcher_path()
     project_root = get_project_root()
     return f"""[Desktop Entry]
-Name=Talk-to-Write
+Name=Katip
 GenericName=Sesli Dikte Asistanı
 GenericName[en]=Voice Dictation Assistant
 Comment=Wispr Flow & SuperWhisper alternatifi ultra hızlı sesli dikte
 Comment[en]=Ultra-fast AI voice dictation desktop assistant
 Exec="{launcher}" %U
 Path={project_root}
-Icon=talk-to-write
+Icon=katip
 Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;
@@ -209,12 +209,12 @@ def detach_windows_console() -> None:
 def _ensure_windows_ico() -> Optional[Path]:
     """Ensures a Windows .ico icon exists in assets/ directory."""
     root = get_project_root()
-    ico_path = root / "assets" / "talk-to-write.ico"
+    ico_path = root / "assets" / "katip.ico"
     if ico_path.exists():
         return ico_path
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve()
-    png_path = root / "assets" / "talk-to-write-256.png"
+    png_path = root / "assets" / "katip-256.png"
     if png_path.exists():
         try:
             from PySide6.QtGui import QImage
@@ -228,7 +228,7 @@ def _ensure_windows_ico() -> Optional[Path]:
 
 def _get_windows_gui_launcher() -> tuple[Path, str]:
     """
-    Returns (target, arguments) for launching Talk-to-Write
+    Returns (target, arguments) for launching Katip
     silently without a console window on Windows.
     Prefers pythonw.exe so no terminal/command prompt window ever appears.
     """
@@ -237,26 +237,26 @@ def _get_windows_gui_launcher() -> tuple[Path, str]:
 
     root = get_project_root()
     # 1. Check if GUI executable exists (compiled by pip gui-scripts)
-    gui_exe = root / ".venv" / "Scripts" / "talk-to-write-gui.exe"
+    gui_exe = root / ".venv" / "Scripts" / "katip-gui.exe"
     if gui_exe.exists():
         return gui_exe.resolve(), ""
 
     # 2. Prefer pythonw.exe in project .venv
     venv_pythonw = root / ".venv" / "Scripts" / "pythonw.exe"
     if venv_pythonw.exists():
-        return venv_pythonw.resolve(), "-m talk_to_write"
+        return venv_pythonw.resolve(), "-m katip"
 
     # 3. Check current interpreter's pythonw.exe
     curr_pythonw = Path(sys.executable).parent / "pythonw.exe"
     if curr_pythonw.exists():
-        return curr_pythonw.resolve(), "-m talk_to_write"
+        return curr_pythonw.resolve(), "-m katip"
 
     # 4. Fallback to bat launcher
-    bat_launcher = root / "bin" / "talk-to-write.bat"
+    bat_launcher = root / "bin" / "katip.bat"
     if bat_launcher.exists():
         return bat_launcher.resolve(), ""
 
-    return Path(sys.executable).resolve(), "-m talk_to_write"
+    return Path(sys.executable).resolve(), "-m katip"
 
 def _create_windows_shortcut(
     target: Path,
@@ -264,7 +264,7 @@ def _create_windows_shortcut(
     arguments: str = "",
     working_dir: Optional[Path] = None,
     icon_path: Optional[Path] = None,
-    description: str = "Talk-to-Write"
+    description: str = "Katip"
 ) -> bool:
     """Creates a Windows .lnk shortcut using PowerShell."""
     shortcut_path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,20 +295,20 @@ def _create_windows_shortcut(
 # --- MACOS INTEGRATION ---
 
 def _get_mac_app_path() -> Path:
-    return Path.home() / "Applications" / "Talk-to-Write.app"
+    return Path.home() / "Applications" / "Katip.app"
 
 def _get_mac_launch_agent_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / "com.talktowrite.app.plist"
 
 def _install_mac_app() -> bool:
-    """Creates a minimal macOS .app bundle in ~/Applications pointing to bin/talk-to-write."""
+    """Creates a minimal macOS .app bundle in ~/Applications pointing to bin/katip."""
     try:
         app_dir = _get_mac_app_path()
         macos_dir = app_dir / "Contents" / "MacOS"
         macos_dir.mkdir(parents=True, exist_ok=True)
 
         launcher = get_launcher_path()
-        exec_script = macos_dir / "Talk-to-Write"
+        exec_script = macos_dir / "Katip"
         exec_script.write_text(f"""#!/bin/bash
 exec "{launcher}" "$@"
 """, encoding="utf-8")
@@ -320,11 +320,11 @@ exec "{launcher}" "$@"
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>Talk-to-Write</string>
+    <string>Katip</string>
     <key>CFBundleIdentifier</key>
     <string>com.talktowrite.app</string>
     <key>CFBundleName</key>
-    <string>Talk-to-Write</string>
+    <string>Katip</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -358,19 +358,19 @@ def is_desktop_installed() -> bool:
         programs = _get_windows_programs_dir()
         if not programs:
             return False
-        return (programs / "Talk-to-Write.lnk").exists()
+        return (programs / "Katip.lnk").exists()
     elif sys.platform.startswith("darwin"):
         return _get_mac_app_path().exists()
     else:
         return _get_linux_desktop_path().exists()
 
 def is_autostart_enabled() -> bool:
-    """Checks if Talk-to-Write is configured to start on user login."""
+    """Checks if Katip is configured to start on user login."""
     if sys.platform.startswith("win"):
         startup = _get_windows_startup_dir()
         if not startup:
             return False
-        return (startup / "Talk-to-Write.lnk").exists()
+        return (startup / "Katip.lnk").exists()
     elif sys.platform.startswith("darwin"):
         return _get_mac_launch_agent_path().exists()
     else:
@@ -378,10 +378,10 @@ def is_autostart_enabled() -> bool:
 
 def install_desktop_entry() -> bool:
     """
-    Registers Talk-to-Write with the OS Application Menu / Search.
-    Linux: ~/.local/share/applications/talk-to-write.desktop & icon themes.
+    Registers Katip with the OS Application Menu / Search.
+    Linux: ~/.local/share/applications/katip.desktop & icon themes.
     Windows: Start Menu Programs shortcut.
-    macOS: ~/Applications/Talk-to-Write.app bundle.
+    macOS: ~/Applications/Katip.app bundle.
     """
     try:
         if sys.platform.startswith("win"):
@@ -393,11 +393,11 @@ def install_desktop_entry() -> bool:
             ico = _ensure_windows_ico()
             res = _create_windows_shortcut(
                 launcher,
-                programs / "Talk-to-Write.lnk",
+                programs / "Katip.lnk",
                 arguments=args,
                 working_dir=root,
                 icon_path=ico,
-                description="Talk-to-Write: Sesli Dikte Asistanı"
+                description="Katip: Sesli Dikte Asistanı"
             )
             # Also create a shortcut on user's Desktop for convenient 1-click access
             desktop_dir = _get_windows_desktop_dir()
@@ -405,11 +405,11 @@ def install_desktop_entry() -> bool:
                 try:
                     _create_windows_shortcut(
                         launcher,
-                        desktop_dir / "Talk-to-Write.lnk",
+                        desktop_dir / "Katip.lnk",
                         arguments=args,
                         working_dir=root,
                         icon_path=ico,
-                        description="Talk-to-Write: Sesli Dikte Asistanı"
+                        description="Katip: Sesli Dikte Asistanı"
                     )
                 except Exception:
                     pass
@@ -434,15 +434,15 @@ def install_desktop_entry() -> bool:
         return False
 
 def uninstall_desktop_entry() -> bool:
-    """Removes Talk-to-Write from the OS Application Menu / Search."""
+    """Removes Katip from the OS Application Menu / Search."""
     try:
         if sys.platform.startswith("win"):
             programs = _get_windows_programs_dir()
-            if programs and (programs / "Talk-to-Write.lnk").exists():
-                (programs / "Talk-to-Write.lnk").unlink()
+            if programs and (programs / "Katip.lnk").exists():
+                (programs / "Katip.lnk").unlink()
             desktop_dir = _get_windows_desktop_dir()
-            if desktop_dir and (desktop_dir / "Talk-to-Write.lnk").exists():
-                (desktop_dir / "Talk-to-Write.lnk").unlink()
+            if desktop_dir and (desktop_dir / "Katip.lnk").exists():
+                (desktop_dir / "Katip.lnk").unlink()
             return True
         elif sys.platform.startswith("darwin"):
             return _uninstall_mac_app()
@@ -464,7 +464,7 @@ def set_autostart(enable: bool) -> bool:
             startup = _get_windows_startup_dir()
             if not startup:
                 return False
-            lnk_path = startup / "Talk-to-Write.lnk"
+            lnk_path = startup / "Katip.lnk"
             if enable:
                 launcher, args = _get_windows_gui_launcher()
                 root = get_project_root()
@@ -475,7 +475,7 @@ def set_autostart(enable: bool) -> bool:
                     arguments=args,
                     working_dir=root,
                     icon_path=ico,
-                    description="Talk-to-Write: Sesli Dikte Asistanı"
+                    description="Katip: Sesli Dikte Asistanı"
                 )
             else:
                 if lnk_path.exists():
@@ -526,7 +526,7 @@ def ensure_desktop_installed() -> None:
     in their Application Search / Start Menu.
     """
     if not is_desktop_installed():
-        print("[Desktop] İlk çalıştırma algılandı: Talk-to-Write uygulama menüsüne kaydediliyor...")
+        print("[Desktop] İlk çalıştırma algılandı: Katip uygulama menüsüne kaydediliyor...")
         install_desktop_entry()
 
 def purge_all(remove_config: bool = True) -> bool:

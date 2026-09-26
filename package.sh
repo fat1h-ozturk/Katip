@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Talk-to-Write: One-Click Standalone Binary Builder (PyInstaller)
+# Katip: One-Click Standalone Binary Builder (PyInstaller)
 # Builds a self-contained executable for Linux / macOS.
 # ==============================================================================
 
@@ -10,7 +10,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 echo "======================================================"
-echo "📦 Talk-to-Write Standalone Binary Oluşturucu"
+echo "📦 Katip Standalone Binary Oluşturucu"
 echo "======================================================"
 
 if [ ! -f ".venv/bin/python" ]; then
@@ -25,9 +25,9 @@ if ! .venv/bin/pip show pyinstaller &>/dev/null; then
 fi
 
 echo "🔨 Standalone ikili dosya derleniyor..."
-.venv/bin/pyinstaller talk-to-write.spec --clean --noconfirm
+.venv/bin/pyinstaller katip.spec --clean --noconfirm
 
 echo "======================================================"
 echo "🎉 Derleme Başarıyla Tamamlandı!"
-echo "Çıktı: dist/Talk-to-Write"
+echo "Çıktı: dist/Katip"
 echo "======================================================"

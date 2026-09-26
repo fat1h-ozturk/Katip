@@ -1,4 +1,4 @@
-from talk_to_write.sound import SoundPlayer
+from katip.sound import SoundPlayer
 
 def test_sound_cache_initialization():
     player = SoundPlayer(enabled=False)

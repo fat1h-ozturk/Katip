@@ -29,7 +29,7 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    [str(project_root / "run_talk_to_write.py")],
+    [str(project_root / "run_katip.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,
@@ -53,7 +53,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="Talk-to-Write",
+    name="Katip",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -66,5 +66,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(project_root / "assets" / "talk-to-write.ico") if (project_root / "assets" / "talk-to-write.ico").exists() else None,
+    icon=str(project_root / "assets" / "katip.ico") if (project_root / "assets" / "katip.ico").exists() else None,
 )

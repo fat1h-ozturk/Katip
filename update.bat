@@ -1,13 +1,13 @@
 @echo off
 REM ==============================================================================
-REM Talk-to-Write: One-Click Windows Update Script
+REM Katip: One-Click Windows Update Script
 REM Pulls latest changes from Git, updates dependencies, and refreshes shortcut.
 REM ==============================================================================
 
 cd /d "%~dp0"
 
 echo ======================================================
-echo Talk-to-Write Windows Guncelleme Araci
+echo Katip Windows Guncelleme Araci
 echo ======================================================
 
 where git >nul 2>nul
@@ -31,7 +31,7 @@ if exist ".venv\Scripts\activate.bat" (
     call .venv\Scripts\activate.bat
     call python -m pip install -r requirements.txt
     call python -m pip install -e . --no-deps
-    call python -m talk_to_write --install
+    call python -m katip --install
 ) else (
     echo [BILGI] Sanal ortam bulunamadi, tam kurulum calistiriliyor...
     call install.bat

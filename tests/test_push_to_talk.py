@@ -13,8 +13,8 @@ app = QApplication.instance()
 if not app:
     app = QApplication(sys.argv)
 
-from talk_to_write.config import ConfigManager, DEFAULT_CONFIG
-from talk_to_write.hotkey import HotkeyManager, HAS_EVDEV, send_ipc_message
+from katip.config import ConfigManager, DEFAULT_CONFIG
+from katip.hotkey import HotkeyManager, HAS_EVDEV, send_ipc_message
 
 
 def test_default_config_trigger_mode():

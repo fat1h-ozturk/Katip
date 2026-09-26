@@ -1,15 +1,15 @@
 import sys
 from pathlib import Path
-from talk_to_write.config import get_config_dir
-from talk_to_write.injector import TextInjector, LinuxInjector, WindowsInjector, MacInjector
-from talk_to_write.sound import SoundPlayer
+from katip.config import get_config_dir
+from katip.injector import TextInjector, LinuxInjector, WindowsInjector, MacInjector
+from katip.sound import SoundPlayer
 
 def test_config_dir_resolution(monkeypatch):
     # Test Windows
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", "C:\\Users\\Test\\AppData\\Roaming")
     p_win = get_config_dir()
-    assert "talk-to-write" in str(p_win)
+    assert "katip" in str(p_win)
     assert "Roaming" in str(p_win)
 
     # Test macOS

@@ -1,6 +1,6 @@
-# 🎙️ Talk-to-Write
+# 🎙️ Katip
 
-**Talk-to-Write**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
+**Katip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
 
 Mikrofonunuzdan konuşmanızı dinler; konuşma dili dolgularını ("ııı", "şey", "yani", "falan") ve dilbilgisi hatalarını anında temizler. Aktif olan herhangi bir pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları, terminal vb.) imleç odağını kaybetmeden doğrudan yazar.
 
@@ -57,12 +57,12 @@ systemctl --user enable --now ydotool
 ### 3. Tek Tıkla Kurulum ve Başlat Menüsüne Ekleme (Önerilen)
 Depoyu klonlayıp tek komutla kurabilirsiniz:
 ```bash
-git clone https://github.com/fat1h-ozturk/talk-to-write.git
-cd talk-to-write
+git clone https://github.com/fat1h-ozturk/katip.git
+cd katip
 ./install.sh
 ```
 > [!NOTE]
-> `install.sh` betiği sanal ortamı hazırlar, bağımlılıkları yükler, projeyi **`-e` (editable / düzenlenebilir)** modda kurar ve Talk-to-Write'ı doğrudan **Başlat Menünüze (KDE Kickoff, GNOME Arama)** simgesiyle kaydeder.
+> `install.sh` betiği sanal ortamı hazırlar, bağımlılıkları yükler, projeyi **`-e` (editable / düzenlenebilir)** modda kurar ve Katip'ı doğrudan **Başlat Menünüze (KDE Kickoff, GNOME Arama)** simgesiyle kaydeder.
 
 *(Alternatif Manuel Kurulum)*:
 ```bash
@@ -70,7 +70,7 @@ python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
-python -m talk_to_write --install
+python -m katip --install
 ```
 
 ### 4. İleride Nasıl Güncellenir?
@@ -81,8 +81,8 @@ Projeye yeni bir özellik veya hata düzeltmesi geldiğinde tek komutla güncell
 > `update.sh` betiği `git pull` ile en son kodları çeker, gerekiyorsa yeni paketleri yükler ve başlat menüsü entegrasyonunu yeniler.
 
 ### 5. Başlatın
-- **Başlat Menüsü / KRunner:** Süper (Windows) tuşuna basıp `Talk-to-Write` veya `Dikte` yazarak açabilirsiniz.
-- **Terminalden:** `./bin/talk-to-write`
+- **Başlat Menüsü / KRunner:** Süper (Windows) tuşuna basıp `Katip` veya `Dikte` yazarak açabilirsiniz.
+- **Terminalden:** `./bin/katip`
 
 ### 6. Sistemden Tamamen Nasıl Kaldırılır? (Uninstall)
 Uygulamayı, menü kayıtlarını, simgeleri, ayarları ve sanal ortamı temizlemek için:
@@ -105,8 +105,8 @@ Windows üzerinde harici bir servis kurmanıza gerek **yoktur**; yerel Win32 API
 ### 2. Klonlama ve Tek Tıkla Kurulum
 Komut İstemi'ni (**CMD**) veya **PowerShell**'i açın:
 ```cmd
-git clone https://github.com/fat1h-ozturk/talk-to-write.git
-cd talk-to-write
+git clone https://github.com/fat1h-ozturk/katip.git
+cd katip
 install.bat
 ```
 
@@ -117,10 +117,10 @@ install.bat
 ### 3. İleride Nasıl Güncellenir?
 Projeye yeni bir özellik veya doğruluk iyileştirmesi geldiğinde:
 - **Yöntem 1 (Tek Tıkla - En Pratik):**  
-  `talk-to-write` klasöründeki **`update.bat`** dosyasına çift tıklayın.
+  `katip` klasöründeki **`update.bat`** dosyasına çift tıklayın.
 - **Yöntem 2 (Komut İstemi / Terminal):**
   ```cmd
-  cd talk-to-write
+  cd katip
   update.bat
   ```
 
@@ -131,15 +131,15 @@ Projeye yeni bir özellik veya doğruluk iyileştirmesi geldiğinde:
 4. Başarı bildirimini ekranda gösterir.
 
 ### 4. Başlatın
-- **Windows Başlat Menüsü:** Klavyenizdeki Windows tuşuna basıp `Talk-to-Write` yazarak uygulamayı açabilirsiniz.
-- **Komut Satırından:** `bin\talk-to-write.bat`
+- **Windows Başlat Menüsü:** Klavyenizdeki Windows tuşuna basıp `Katip` yazarak uygulamayı açabilirsiniz.
+- **Komut Satırından:** `bin\katip.bat`
 
 ### 5. Sistemden Tamamen Nasıl Kaldırılır? (Uninstall)
 Uygulamayı, Başlat Menüsü/Başlangıç kısayollarını, ayarları ve sanal ortamı temizlemek için:
 - **Yöntem 1 (Tek Tıkla):** Klasördeki **`uninstall.bat`** dosyasına çift tıklayın.
 - **Yöntem 2 (Terminal):**
   ```cmd
-  cd talk-to-write
+  cd katip
   uninstall.bat
   ```
 *(İsteğe bağlı olarak proje klasörünü de tamamen silmek isteyip istemediğinizi sorar).*
@@ -147,7 +147,7 @@ Uygulamayı, Başlat Menüsü/Başlangıç kısayollarını, ayarları ve sanal 
 ### 6. 📦 Python Olmadan Bağımsız Çalıştırma (Standalone .exe)
 Eğer uygulamayı Python kurulu olmayan başka bir Windows bilgisayara taşımak veya tek bir `.exe` olarak kullanmak isterseniz:
 - Klasördeki **`build_exe.bat`** dosyasına çift tıklayın.
-- Derleme bittiğinde **`dist\Talk-to-Write.exe`** dosyası oluşturulacaktır (~52 MB).
+- Derleme bittiğinde **`dist\Katip.exe`** dosyası oluşturulacaktır (~52 MB).
 - Bu `.exe` dosyasını herhangi bir Windows bilgisayara kopyalayıp Python yüklemeden doğrudan çalıştırabilirsiniz!
 </details>
 
@@ -166,32 +166,32 @@ macOS üzerinde ses çalma (`afplay`), pano (`pbcopy`) ve metin yapıştırma (A
 ### 2. Klonlama ve Tek Tıkla Kurulum
 Terminali açıp depoyu klonlayın:
 ```bash
-git clone https://github.com/fat1h-ozturk/talk-to-write.git
-cd talk-to-write
+git clone https://github.com/fat1h-ozturk/katip.git
+cd katip
 ./install.sh
 ```
 *(veya Finder üzerinden klasördeki **`install.command`** dosyasına çift tıklayabilirsiniz).*
 
 > [!NOTE]
-> `install.sh`, sanal ortamı kurar, bağımlılıkları yükler, projeyi **`-e` (editable / düzenlenebilir)** modda bağlar ve macOS **Spotlight / Launchpad** araması için `~/Applications/Talk-to-Write.app` paketini otomatik oluşturur.
+> `install.sh`, sanal ortamı kurar, bağımlılıkları yükler, projeyi **`-e` (editable / düzenlenebilir)** modda bağlar ve macOS **Spotlight / Launchpad** araması için `~/Applications/Katip.app` paketini otomatik oluşturur.
 
 ### 3. İleride Nasıl Güncellenir?
 Yeni güncellemeleri almak için:
 - **Yöntem 1 (Finder'dan Çift Tık):** Klasördeki **`update.command`** dosyasına çift tıklayın.
 - **Yöntem 2 (Terminalden):**
   ```bash
-  cd talk-to-write
+  cd katip
   ./update.sh
   ```
 
 ### 4. Başlatın ve İzinleri Verin
-- **Spotlight:** `Cmd+Space` tuşlarına basıp `Talk-to-Write` yazarak açın.
-- **Terminalden:** `./bin/talk-to-write`
+- **Spotlight:** `Cmd+Space` tuşlarına basıp `Katip` yazarak açın.
+- **Terminalden:** `./bin/katip`
 
 > [!IMPORTANT]
 > macOS güvenlik kuralları gereği, uygulamanın mikrofonu dinleyebilmesi ve aktif pencereye `Cmd+V` yapıştırma simülasyonu gönderebilmesi için **Sistem Ayarları -> Gizlilik ve Güvenlik** altından:
-> 1. **Mikrofon (Microphone):** Terminal / Talk-to-Write için izin verin.
-> 2. **Erişilebilirlik (Accessibility):** Terminal / Talk-to-Write için izin verin.
+> 1. **Mikrofon (Microphone):** Terminal / Katip için izin verin.
+> 2. **Erişilebilirlik (Accessibility):** Terminal / Katip için izin verin.
 
 ### 5. Sistemden Tamamen Nasıl Kaldırılır? (Uninstall)
 Uygulamayı, `.app` paketini, Spotlight kaydını, LaunchAgent ve ayarları temizlemek için:
@@ -221,11 +221,11 @@ Uygulamayı, `.app` paketini, Spotlight kaydını, LaunchAgent ve ayarları temi
 
 ## ⌨️ Özel Kısayol Tuşu Entegrasyonu (`--toggle`)
 
-Her işletim sisteminde `talk-to-write --toggle` komutu çalışır durumda olan uygulamayı anında tetikler:
+Her işletim sisteminde `katip --toggle` komutu çalışır durumda olan uygulamayı anında tetikler:
 
-- **Linux (KDE / GNOME):** Sistem Ayarları -> Kısayollar -> Yeni Komut: `talk-to-write --toggle`
-- **Windows:** AutoHotkey veya Windows Görev Çubuğu kısayolu ile `bin\talk-to-write.bat --toggle`
-- **macOS:** Kısayollar (Shortcuts) uygulaması veya Raycast / Alfred üzerinden `bin/talk-to-write --toggle`
+- **Linux (KDE / GNOME):** Sistem Ayarları -> Kısayollar -> Yeni Komut: `katip --toggle`
+- **Windows:** AutoHotkey veya Windows Görev Çubuğu kısayolu ile `bin\katip.bat --toggle`
+- **macOS:** Kısayollar (Shortcuts) uygulaması veya Raycast / Alfred üzerinden `bin/katip --toggle`
 
 ---
 

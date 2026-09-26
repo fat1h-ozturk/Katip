@@ -1,4 +1,4 @@
-from talk_to_write.prompts import build_system_prompt
+from katip.prompts import build_system_prompt
 
 def test_prompt_modes():
     dictation_p = build_system_prompt("dictation")

@@ -16,8 +16,8 @@ app = QApplication.instance()
 if not app:
     app = QApplication(sys.argv)
 
-from talk_to_write.ui.hotkey_recorder import HotkeyRecorderWidget
-from talk_to_write.hotkey import HotkeyManager, HAS_EVDEV
+from katip.ui.hotkey_recorder import HotkeyRecorderWidget
+from katip.hotkey import HotkeyManager, HAS_EVDEV
 
 
 def test_hotkey_recorder_initial_and_set_get():

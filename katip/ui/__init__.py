@@ -1,5 +1,5 @@
 """
-UI components for Talk-to-Write (Floating Pill, System Tray, Settings).
+UI components for Katip (Floating Pill, System Tray, Settings).
 """
 
 from .pill import FloatingPill

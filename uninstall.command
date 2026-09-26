@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Talk-to-Write: Double-Click Uninstaller for macOS Finder
+# Katip: Double-Click Uninstaller for macOS Finder
 # ==============================================================================
 
 cd "$(dirname "$0")"

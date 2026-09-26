@@ -1,5 +1,5 @@
 """
-Procedural sound effect feedback for Talk-to-Write.
+Procedural sound effect feedback for Katip.
 Generates pleasant acoustic chimes for start, stop, success, and error states.
 """
 

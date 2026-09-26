@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Talk-to-Write
+Name=Katip
 GenericName=Sesli Dikte Asistanı
 GenericName[en]=Voice Dictation Assistant
 Comment=Wispr Flow & SuperWhisper alternatifi ultra hızlı sesli dikte
 Comment[en]=Ultra-fast AI voice dictation desktop assistant
-Exec=talk-to-write %U
-Icon=talk-to-write
+Exec=katip %U
+Icon=katip
 Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;

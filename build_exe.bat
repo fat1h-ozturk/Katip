@@ -1,15 +1,15 @@
 @echo off
 chcp 65001 >nul 2>&1
 REM ==============================================================================
-REM Talk-to-Write: One-Click Standalone Executable Builder (PyInstaller)
-REM Produces a self-contained Talk-to-Write.exe that runs on any Windows machine
+REM Katip: One-Click Standalone Executable Builder (PyInstaller)
+REM Produces a self-contained Katip.exe that runs on any Windows machine
 REM without requiring Python or external dependencies installed.
 REM ==============================================================================
 
 cd /d "%~dp0"
 
 echo ======================================================
-echo Talk-to-Write Standalone EXE Olusturucu
+echo Katip Standalone EXE Olusturucu
 echo ======================================================
 
 if not exist ".venv\Scripts\python.exe" (
@@ -30,8 +30,8 @@ if errorlevel 1 (
     )
 )
 
-echo [BILGI] Standalone Talk-to-Write.exe derleniyor (Bu islem 1-2 dakika surebilir)...
-.venv\Scripts\pyinstaller.exe talk-to-write.spec --clean --noconfirm
+echo [BILGI] Standalone Katip.exe derleniyor (Bu islem 1-2 dakika surebilir)...
+.venv\Scripts\pyinstaller.exe katip.spec --clean --noconfirm
 if errorlevel 1 (
     echo [HATA] Derleme basarisiz oldu!
     pause
@@ -40,7 +40,7 @@ if errorlevel 1 (
 
 echo ======================================================
 echo Derleme Basariyla Tamamlandi!
-echo Cikti: dist\Talk-to-Write.exe
+echo Cikti: dist\Katip.exe
 echo ======================================================
 echo Bu .exe dosyasini herhangi bir Windows bilgisayara kopyalayip
 echo Python yuklemeden dogrudan calistirabilirsiniz.

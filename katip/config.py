@@ -9,15 +9,15 @@ def get_config_dir() -> Path:
     if sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA")
         if appdata:
-            return Path(appdata) / "talk-to-write"
-        return Path.home() / "AppData" / "Roaming" / "talk-to-write"
+            return Path(appdata) / "katip"
+        return Path.home() / "AppData" / "Roaming" / "katip"
     elif sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "talk-to-write"
+        return Path.home() / "Library" / "Application Support" / "katip"
     else:
         xdg = os.environ.get("XDG_CONFIG_HOME")
         if xdg:
-            return Path(xdg) / "talk-to-write"
-        return Path.home() / ".config" / "talk-to-write"
+            return Path(xdg) / "katip"
+        return Path.home() / ".config" / "katip"
 
 CONFIG_DIR = get_config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -32,7 +32,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
     "trigger_mode": "toggle",  # "toggle" or "push_to_talk"
-    "custom_vocabulary": ["TalkToWrite", "Gemini", "PySide6", "Wayland"],
+    "custom_vocabulary": ["Katip", "Gemini", "PySide6", "Wayland"],
     "sound_effects": True,
     "vad_mode": 2,  # 1: Low, 2: Medium, 3: High
     "terminal_paste_mode": False,

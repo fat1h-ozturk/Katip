@@ -1,5 +1,5 @@
 """
-Audio capture engine for Talk-to-Write.
+Audio capture engine for Katip.
 Captures 16kHz 16-bit mono PCM audio in memory and reports real-time audio volume levels.
 Includes WebRTC VAD (Voice Activity Detection) silence trimming and peak audio normalization.
 """

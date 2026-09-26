@@ -1,5 +1,5 @@
 """
-Talk-to-Write: High-performance, low-latency dictation and voice-to-text assistant.
+Katip: High-performance, low-latency dictation and voice-to-text assistant.
 Cross-platform support for Linux, Windows, and macOS.
 """
 

@@ -5,9 +5,9 @@ Unit tests for accuracy improvements, VAD trimming, and LLM output cleaning.
 import math
 import struct
 from unittest.mock import MagicMock, patch
-from talk_to_write.prompts import build_system_prompt
-from talk_to_write.services.groq import _clean_llm_output, GroqService
-from talk_to_write.audio import AudioRecorder
+from katip.prompts import build_system_prompt
+from katip.services.groq import _clean_llm_output, GroqService
+from katip.audio import AudioRecorder
 
 
 def test_silence_instruction_in_prompts():

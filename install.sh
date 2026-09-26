@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Talk-to-Write: One-Click Linux Setup & Application Menu Registration Script
+# Katip: One-Click Linux Setup & Application Menu Registration Script
 # ==============================================================================
 
 set -e
@@ -9,7 +9,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 echo "======================================================"
-echo "🎙️  Talk-to-Write Kurulum Sihirbazı"
+echo "🎙️  Katip Kurulum Sihirbazı"
 echo "======================================================"
 
 # 1. Check Python 3
@@ -36,17 +36,17 @@ echo "📦 Bağımlılıklar yükleniyor/güncelleniyor..."
 .venv/bin/pip install -e . --no-deps -q
 
 # 4. Make launcher and lifecycle scripts executable
-chmod +x bin/talk-to-write update.sh install.sh uninstall.sh install.command update.command uninstall.command 2>/dev/null || true
+chmod +x bin/katip update.sh install.sh uninstall.sh install.command update.command uninstall.command 2>/dev/null || true
 
 # 5. Register with Desktop Environment & Application Menu / Spotlight
 echo "🚀 Başlat Menüsü / Uygulama Arama entegrasyonu yapılıyor..."
-.venv/bin/python -m talk_to_write --install
+.venv/bin/python -m katip --install
 
 echo "======================================================"
 echo "🎉 Kurulum Başarıyla Tamamlandı!"
 echo ""
 echo "📌 Kullanım Seçenekleri:"
-echo "  1. Başlat Menüsü / KRunner: 'Talk-to-Write' veya 'Dikte' yazarak açabilirsiniz."
-echo "  2. Terminalden çalıştırmak için: ./bin/talk-to-write"
+echo "  1. Başlat Menüsü / KRunner: 'Katip' veya 'Dikte' yazarak açabilirsiniz."
+echo "  2. Terminalden çalıştırmak için: ./bin/katip"
 echo "  3. Kaydı başlatmak / durdurmak için kısayol: Ctrl+Alt+Space"
 echo "======================================================"
