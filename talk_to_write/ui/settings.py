@@ -185,10 +185,15 @@ class SettingsDialog(QDialog):
         self.hotkey_edit = HotkeyRecorderWidget()
         trigger_layout.addRow("Genel Kısayol:", self.hotkey_edit)
 
+        self.trigger_mode_combo = QComboBox()
+        self.trigger_mode_combo.addItem("Aç / Kapa (Toggle) — Basınca başlar, tekrar basınca durur", "toggle")
+        self.trigger_mode_combo.addItem("Bas-Konuş (Push-to-Talk) — Basılı tutunca dinler, bırakınca yazar", "push_to_talk")
+        trigger_layout.addRow("Çalışma Şekli:", self.trigger_mode_combo)
+
         info_lbl = QLabel(
             "💡 <b>İpucu:</b> KDE Sistem Ayarları -> Kısayollar -> Yeni Komut ekleyerek "
-            "dilediğiniz tuş kombinasyonuna (örn: Meta+Space veya CapsLock) "
-            "<code>talk-to-write --toggle</code> atayabilirsiniz."
+            "dilediğiniz tuşa <code>talk-to-write --toggle</code> (veya Bas-Konuş için "
+            "<code>--start</code> ve <code>--stop</code>) atayabilirsiniz."
         )
         info_lbl.setWordWrap(True)
         info_lbl.setStyleSheet("color: #71717a; font-size: 11px;")
@@ -357,6 +362,10 @@ class SettingsDialog(QDialog):
             self.mic_combo.setCurrentIndex(found_idx)
 
         self.hotkey_edit.set_hotkey(self.config.get("hotkey", "Ctrl+Alt+Space"))
+        trigger_mode = self.config.get("trigger_mode", "toggle")
+        t_idx = self.trigger_mode_combo.findData(trigger_mode)
+        if t_idx >= 0:
+            self.trigger_mode_combo.setCurrentIndex(t_idx)
 
         vocab = self.config.get("custom_vocabulary", [])
         self.vocab_edit.setText(", ".join(vocab))
@@ -381,6 +390,7 @@ class SettingsDialog(QDialog):
         self.config.set("language", self.language_combo.currentData())
         self.config.set("input_device_index", self.mic_combo.currentData())
         self.config.set("hotkey", self.hotkey_edit.get_hotkey())
+        self.config.set("trigger_mode", self.trigger_mode_combo.currentData())
 
         raw_vocab = self.vocab_edit.text().split(",")
         vocab = [v.strip() for v in raw_vocab if v.strip()]

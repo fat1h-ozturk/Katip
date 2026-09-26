@@ -38,12 +38,18 @@ class HotkeyManager:
     def __init__(
         self,
         hotkey_str: str = "Ctrl+Alt+Space",
+        trigger_mode: str = "toggle",
         on_toggle: Optional[Callable[[], None]] = None,
+        on_press: Optional[Callable[[], None]] = None,
+        on_release: Optional[Callable[[], None]] = None,
         on_notify_running: Optional[Callable[[], None]] = None,
         on_open_settings: Optional[Callable[[], None]] = None,
     ):
         self.hotkey_str = hotkey_str
+        self.trigger_mode = trigger_mode  # "toggle" or "push_to_talk"
         self.on_toggle = on_toggle
+        self.on_press = on_press
+        self.on_release = on_release
         self.on_notify_running = on_notify_running
         self.on_open_settings = on_open_settings
         self.is_running = False
@@ -119,6 +125,18 @@ class HotkeyManager:
                         if self.on_toggle:
                             self.on_toggle()
                         conn.sendall(b"ok")
+                    elif data == "start":
+                        if self.on_press:
+                            self.on_press()
+                        elif self.on_toggle:
+                            self.on_toggle()
+                        conn.sendall(b"ok")
+                    elif data == "stop":
+                        if self.on_release:
+                            self.on_release()
+                        elif self.on_toggle:
+                            self.on_toggle()
+                        conn.sendall(b"ok")
                     elif data == "ping":
                         conn.sendall(b"pong")
                     elif data == "notify_running":
@@ -177,10 +195,44 @@ class HotkeyManager:
                 self.on_toggle()
 
         try:
-            self._pynput_listener = pynput_keyboard.GlobalHotKeys({
-                hotkey_combo: on_activate
-            })
-            self._pynput_listener.start()
+            if self.trigger_mode == "push_to_talk":
+                parsed_keys = set(pynput_keyboard.HotKey.parse(hotkey_combo))
+                active_keys = set()
+                is_triggered = False
+                lock = threading.Lock()
+
+                def on_pynput_press(k):
+                    nonlocal is_triggered
+                    with lock:
+                        canonical = listener.canonical(k)
+                        if canonical in parsed_keys:
+                            active_keys.add(canonical)
+                            if active_keys == parsed_keys and not is_triggered:
+                                is_triggered = True
+                                if self.on_press:
+                                    self.on_press()
+
+                def on_pynput_release(k):
+                    nonlocal is_triggered
+                    with lock:
+                        canonical = listener.canonical(k)
+                        active_keys.discard(canonical)
+                        if is_triggered and active_keys != parsed_keys:
+                            is_triggered = False
+                            if self.on_release:
+                                self.on_release()
+
+                listener = pynput_keyboard.Listener(
+                    on_press=on_pynput_press,
+                    on_release=on_pynput_release
+                )
+                self._pynput_listener = listener
+                listener.start()
+            else:
+                self._pynput_listener = pynput_keyboard.GlobalHotKeys({
+                    hotkey_combo: on_activate
+                })
+                self._pynput_listener.start()
         except Exception as e:
             print(f"[Hotkey] Failed to start pynput listener ({hotkey_combo}): {e}")
 
@@ -258,7 +310,6 @@ class HotkeyManager:
                 self._active_keys.add(code)
             elif value == 0:
                 self._active_keys.discard(code)
-                self._combo_triggered = False
 
             all_satisfied = True
             for part in combo_parts:
@@ -280,8 +331,17 @@ class HotkeyManager:
 
             if all_satisfied and not self._combo_triggered:
                 self._combo_triggered = True
-                if self.on_toggle:
-                    self.on_toggle()
+                if self.trigger_mode == "push_to_talk":
+                    if self.on_press:
+                        self.on_press()
+                else:
+                    if self.on_toggle:
+                        self.on_toggle()
+            elif not all_satisfied and self._combo_triggered:
+                self._combo_triggered = False
+                if self.trigger_mode == "push_to_talk":
+                    if self.on_release:
+                        self.on_release()
 
 
 def send_ipc_message(message: str, timeout: float = 1.0) -> Optional[str]:
@@ -326,4 +386,14 @@ def open_running_settings() -> bool:
 def send_ipc_toggle() -> bool:
     """Sends a toggle trigger to a running Talk-to-Write instance across OS platforms."""
     res = send_ipc_message("toggle")
+    return res in ("ok", "pong", "") or res is not None
+
+def send_ipc_start() -> bool:
+    """Sends a start recording trigger to a running Talk-to-Write instance."""
+    res = send_ipc_message("start")
+    return res in ("ok", "pong", "") or res is not None
+
+def send_ipc_stop() -> bool:
+    """Sends a stop recording trigger to a running Talk-to-Write instance."""
+    res = send_ipc_message("stop")
     return res in ("ok", "pong", "") or res is not None

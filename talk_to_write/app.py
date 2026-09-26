@@ -28,6 +28,8 @@ class WorkerSignals(QObject):
     processing_done = Signal(str, float)
     processing_error = Signal(str)
     toggle_received = Signal()
+    start_received = Signal()
+    stop_received = Signal()
     notify_received = Signal()
     settings_received = Signal()
 
@@ -44,6 +46,8 @@ class TalkToWriteApp:
         self.signals.processing_done.connect(self._on_processing_success)
         self.signals.processing_error.connect(self._on_processing_error)
         self.signals.toggle_received.connect(self.toggle_recording)
+        self.signals.start_received.connect(self.start_recording)
+        self.signals.stop_received.connect(self.stop_recording_and_process)
         self.signals.notify_received.connect(self._on_notify_running)
         self.signals.settings_received.connect(self.open_settings)
 
@@ -77,7 +81,10 @@ class TalkToWriteApp:
         # Hotkey & IPC listener
         self.hotkey_mgr = HotkeyManager(
             hotkey_str=self.config.get("hotkey", "Ctrl+Alt+Space"),
+            trigger_mode=self.config.get("trigger_mode", "toggle"),
             on_toggle=lambda: self.signals.toggle_received.emit(),
+            on_press=lambda: self.signals.start_received.emit(),
+            on_release=lambda: self.signals.stop_received.emit(),
             on_notify_running=lambda: self.signals.notify_received.emit(),
             on_open_settings=lambda: self.signals.settings_received.emit()
         )
@@ -115,6 +122,39 @@ class TalkToWriteApp:
             self._groq_service = GroqService(api_key=api_key, stt_model=stt_model, llm_model=llm_model)
         return self._groq_service
 
+    def start_recording(self) -> None:
+        """Starts audio recording if not already recording or busy."""
+        if self.is_busy_processing or self.recorder.is_recording:
+            return
+        current_mode = self.config.get("mode", "dictation")
+        print(f"[App] Kayıt başladı (Mod: {current_mode})")
+        self.sound.play("start")
+        self.pill.show_recording(mode=current_mode)
+        self.tray.set_recording(True)
+        self.recorder.start_recording()
+
+    def stop_recording_and_process(self) -> None:
+        """Stops audio recording and sends audio to AI pipeline."""
+        if not self.recorder.is_recording:
+            return
+        print("[App] Kayıt durduruldu, ses işleniyor...")
+        self.sound.play("stop")
+        self.pill.show_processing()
+        self.tray.set_recording(False)
+        self.is_busy_processing = True
+        self.q_app.processEvents()
+
+        audio_bytes = self.recorder.stop_recording()
+
+        if not audio_bytes or len(audio_bytes) < 3200:  # < 0.1s
+            print("[App] Çok kısa ses veya ses algılanamadı.")
+            self.is_busy_processing = False
+            self.sound.play("error")
+            self.pill.show_error("Ses algılanamadı.")
+            return
+
+        threading.Thread(target=self._process_audio_worker, args=(audio_bytes,), daemon=True).start()
+
     def toggle_recording(self) -> None:
         """Toggles between starting audio capture and sending to AI."""
         if self.is_busy_processing:
@@ -122,32 +162,9 @@ class TalkToWriteApp:
             return
 
         if not self.recorder.is_recording:
-            # START RECORDING
-            current_mode = self.config.get("mode", "dictation")
-            print(f"[App] Kayıt başladı (Mod: {current_mode})")
-            self.sound.play("start")
-            self.pill.show_recording(mode=current_mode)
-            self.tray.set_recording(True)
-            self.recorder.start_recording()
+            self.start_recording()
         else:
-            # STOP RECORDING & PROCESS
-            print("[App] Kayıt durduruldu, ses işleniyor...")
-            self.sound.play("stop")
-            self.pill.show_processing()
-            self.tray.set_recording(False)
-            self.is_busy_processing = True
-            self.q_app.processEvents()
-
-            audio_bytes = self.recorder.stop_recording()
-
-            if not audio_bytes or len(audio_bytes) < 3200:  # < 0.1s
-                print("[App] Çok kısa ses veya ses algılanamadı.")
-                self.is_busy_processing = False
-                self.sound.play("error")
-                self.pill.show_error("Ses algılanamadı.")
-                return
-
-            threading.Thread(target=self._process_audio_worker, args=(audio_bytes,), daemon=True).start()
+            self.stop_recording_and_process()
 
     def _process_audio_worker(self, audio_bytes: bytes) -> None:
         """Runs in background thread to query AI and inject text."""
@@ -245,7 +262,10 @@ class TalkToWriteApp:
         self.hotkey_mgr.stop()
         self.hotkey_mgr = HotkeyManager(
             hotkey_str=self.config.get("hotkey", "Ctrl+Alt+Space"),
+            trigger_mode=self.config.get("trigger_mode", "toggle"),
             on_toggle=lambda: self.signals.toggle_received.emit(),
+            on_press=lambda: self.signals.start_received.emit(),
+            on_release=lambda: self.signals.stop_received.emit(),
             on_notify_running=lambda: self.signals.notify_received.emit(),
             on_open_settings=lambda: self.signals.settings_received.emit()
         )

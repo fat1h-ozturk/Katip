@@ -31,6 +31,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "groq_llm_model": "qwen/qwen3.8-27b",
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
+    "trigger_mode": "toggle",  # "toggle" or "push_to_talk"
     "custom_vocabulary": ["TalkToWrite", "Gemini", "PySide6", "Wayland"],
     "sound_effects": True,
     "language": "auto",  # "auto", "tr", "en"

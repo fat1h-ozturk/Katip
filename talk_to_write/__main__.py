@@ -26,6 +26,8 @@ from .hotkey import (
     is_instance_running,
     notify_running_instance,
     open_running_settings,
+    send_ipc_start,
+    send_ipc_stop,
     send_ipc_toggle,
 )
 
@@ -41,6 +43,16 @@ def main():
         "--toggle",
         action="store_true",
         help="Send toggle trigger to running Talk-to-Write instance."
+    )
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Start recording on running instance (push-to-talk press)."
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="Stop recording on running instance (push-to-talk release)."
     )
     parser.add_argument(
         "--settings",
@@ -134,7 +146,7 @@ def main():
         print(f"  • Otomatik Başlatma (Autostart): {'Açık ✓' if autostart else 'Kapalı ✗'}")
         sys.exit(0)
 
-    # 5. Handle --toggle
+    # 5. Handle --toggle, --start, --stop
     if args.toggle:
         success = send_ipc_toggle()
         if success:
@@ -142,6 +154,24 @@ def main():
             sys.exit(0)
         else:
             print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı. Lütfen önce uygulamayı başlatın.")
+            sys.exit(1)
+
+    if args.start:
+        success = send_ipc_start()
+        if success:
+            print("[Talk-to-Write] Kayıt başlatıldı (Start sinyali iletildi).")
+            sys.exit(0)
+        else:
+            print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı.")
+            sys.exit(1)
+
+    if args.stop:
+        success = send_ipc_stop()
+        if success:
+            print("[Talk-to-Write] Kayıt durduruldu (Stop sinyali iletildi).")
+            sys.exit(0)
+        else:
+            print("[Talk-to-Write] Çalışan bir Talk-to-Write uygulaması bulunamadı.")
             sys.exit(1)
 
     # 6. Handle --settings
