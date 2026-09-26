@@ -56,6 +56,17 @@ class ConfigManager:
         if not self.config_file.parent.exists():
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Migrate from legacy talk-to-write config if present
+        if not self.config_file.exists():
+            legacy_config = self.config_file.parent.parent / "talk-to-write" / "config.json"
+            if legacy_config.exists():
+                try:
+                    import shutil
+                    shutil.copy2(legacy_config, self.config_file)
+                    print("[Config] Migrated settings from talk-to-write to katip.")
+                except Exception as e:
+                    print(f"[Config] Migration error: {e}")
+
         if self.config_file.exists():
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:

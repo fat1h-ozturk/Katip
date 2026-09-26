@@ -82,14 +82,15 @@ def _uninstall_linux_icons() -> None:
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     hicolor_dir = data_home / "icons" / "hicolor"
     
-    svg_target = hicolor_dir / "scalable" / "apps" / "katip.svg"
-    if svg_target.exists():
-        svg_target.unlink()
+    for icon_name in ("katip", "talk-to-write"):
+        svg_target = hicolor_dir / "scalable" / "apps" / f"{icon_name}.svg"
+        if svg_target.exists():
+            svg_target.unlink()
 
-    for size in (64, 128, 256):
-        png_target = hicolor_dir / f"{size}x{size}" / "apps" / "katip.png"
-        if png_target.exists():
-            png_target.unlink()
+        for size in (64, 128, 256):
+            png_target = hicolor_dir / f"{size}x{size}" / "apps" / f"{icon_name}.png"
+            if png_target.exists():
+                png_target.unlink()
 
 def _refresh_linux_desktop_database() -> None:
     """Updates desktop database and KDE sycoca cache so changes appear instantly."""
@@ -422,6 +423,13 @@ def install_desktop_entry() -> bool:
 
             # 2. Write .desktop file
             dest_file = _get_linux_desktop_path()
+            # Clean up legacy talk-to-write.desktop if present
+            legacy_file = dest_file.parent / "talk-to-write.desktop"
+            if legacy_file.exists():
+                legacy_file.unlink()
+            legacy_autostart = _get_linux_autostart_path().parent / "talk-to-write.desktop"
+            if legacy_autostart.exists():
+                legacy_autostart.unlink()
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(_generate_desktop_entry_content(), encoding="utf-8")
             dest_file.chmod(0o755)
@@ -450,6 +458,9 @@ def uninstall_desktop_entry() -> bool:
             dest_file = _get_linux_desktop_path()
             if dest_file.exists():
                 dest_file.unlink()
+            legacy_file = dest_file.parent / "talk-to-write.desktop"
+            if legacy_file.exists():
+                legacy_file.unlink()
             _uninstall_linux_icons()
             _refresh_linux_desktop_database()
             return True
