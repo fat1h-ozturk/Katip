@@ -124,6 +124,11 @@ class GroqService:
             raise RuntimeError(f"Groq Whisper bağlantı hatası: {e}")
 
         if stt_resp.status_code != 200:
+            if stt_resp.status_code == 401:
+                raise RuntimeError(
+                    "Groq API anahtarı geçersiz veya iptal edilmiş (401). "
+                    "Ayarlar'daki Groq API anahtarını güncel bir anahtarla yeniden kaydedin."
+                )
             raise RuntimeError(f"Groq Whisper Hatası ({stt_resp.status_code}): {stt_resp.text[:200]}")
 
         raw_transcript = stt_resp.json().get("text", "").strip()

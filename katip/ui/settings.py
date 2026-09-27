@@ -4,6 +4,7 @@ Allows configuring API keys, AI providers, models, hotkeys, and custom vocabular
 """
 
 from typing import Callable, Optional
+import sys
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -517,8 +518,18 @@ class SettingsDialog(QDialog):
                 "Metin panoya kopyalandı ve aktif pencereye yapıştırma simülasyonu gönderildi!"
             )
         else:
+            if sys.platform == "darwin":
+                help_text = (
+                    "macOS'ta Sistem Ayarları > Gizlilik ve Güvenlik > Otomasyon bölümünde "
+                    "uygulamanın/Terminal'in System Events'i denetlemesine izin verin; "
+                    "Erişilebilirlik iznini de açın."
+                )
+            elif sys.platform.startswith("linux"):
+                help_text = "Linux'ta ydotool servisinin çalıştığını kontrol edin."
+            else:
+                help_text = "İşletim sisteminin klavye denetimi izinlerini kontrol edin."
             QMessageBox.warning(
                 self,
                 "Test Uyarısı",
-                "Metin panoya kopyalandı ancak otomatik Ctrl+V gönderilemedi.\nydotool servisinin çalıştığından emin olun."
+                f"Metin panoya kopyalandı ancak otomatik yapıştırma gönderilemedi.\n\n{help_text}"
             )

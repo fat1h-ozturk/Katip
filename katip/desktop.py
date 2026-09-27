@@ -5,9 +5,12 @@ and autostart-on-login configuration.
 """
 
 import os
+import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -302,39 +305,99 @@ def _get_mac_launch_agent_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / "com.talktowrite.app.plist"
 
 def _install_mac_app() -> bool:
-    """Creates a minimal macOS .app bundle in ~/Applications pointing to bin/katip."""
+    """Creates a native AppleScript .app launcher in ~/Applications."""
     try:
         app_dir = _get_mac_app_path()
-        macos_dir = app_dir / "Contents" / "MacOS"
-        macos_dir.mkdir(parents=True, exist_ok=True)
-
+        app_dir.parent.mkdir(parents=True, exist_ok=True)
         launcher = get_launcher_path()
-        exec_script = macos_dir / "Katip"
-        exec_script.write_text(f"""#!/bin/bash
-exec "{launcher}" "$@"
-""", encoding="utf-8")
-        exec_script.chmod(0o755)
 
-        info_plist = app_dir / "Contents" / "Info.plist"
-        info_plist.write_text("""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>Katip</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.talktowrite.app</string>
-    <key>CFBundleName</key>
-    <string>Katip</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.2.0</string>
-    <key>LSUIElement</key>
-    <string>1</string>
-</dict>
-</plist>
-""", encoding="utf-8")
+        log_path = Path.home() / "Library" / "Logs" / "Katip.log"
+        access_check = f"/usr/bin/test -x {shlex.quote(str(launcher))}"
+        shell_command = (
+            f"nohup {shlex.quote(str(launcher))} >> {shlex.quote(str(log_path))} "
+            "2>&1 < /dev/null &"
+        )
+        applescript_access_check = access_check.replace("\\", "\\\\").replace('"', '\\"')
+        applescript_command = shell_command.replace("\\", "\\\\").replace('"', '\\"')
+        applescript_source = (
+            "on run\n"
+            "    try\n"
+            f'        do shell script "{applescript_access_check}"\n'
+            "    on error errorMessage\n"
+            '        display dialog "macOS, Katip\'in Belgeler klasöründeki program dosyalarına erişmesini engelledi. Sistem Ayarları > Gizlilik ve Güvenlik > Dosyalar ve Klasörler bölümünde Katip için Belgeler klasörü erişimini açın ve tekrar deneyin. Ayrıntı: " & errorMessage buttons {"Tamam"} default button "Tamam"\n'
+            "        return\n"
+            "    end try\n"
+            f'    do shell script "{applescript_command}"\n'
+            "end run\n"
+        )
+
+        with tempfile.TemporaryDirectory(prefix="katip-app-", dir=app_dir.parent) as temp_dir:
+            temp_root = Path(temp_dir)
+            source_file = temp_root / "Katip.applescript"
+            built_app = temp_root / "Katip.app"
+            source_file.write_text(applescript_source, encoding="utf-8")
+            result = subprocess.run(
+                ["/usr/bin/osacompile", "-o", str(built_app), str(source_file)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout).strip()
+                raise RuntimeError(detail or "osacompile failed")
+
+            info_plist = built_app / "Contents" / "Info.plist"
+            with info_plist.open("rb") as plist_file:
+                metadata = plistlib.load(plist_file)
+            metadata.update({
+                "CFBundleIdentifier": "com.talktowrite.app",
+                "CFBundleName": "Katip",
+                "CFBundleDisplayName": "Katip",
+                "LSUIElement": True,
+                "LSArchitecturePriority": ["arm64", "x86_64"],
+                "CFBundleIconFile": "Katip.icns",
+                "NSDocumentsFolderUsageDescription": (
+                    "Katip, klonladığınız proje klasöründeki uygulama dosyalarını "
+                    "başlatmak için Belgeler klasörüne erişir."
+                ),
+            })
+            # osacompile sets this to its stock "applet" asset-catalog icon.
+            # Keep the explicit .icns file as the only bundle icon source.
+            metadata.pop("CFBundleIconName", None)
+
+            icon_source = get_project_root() / "assets" / "katip-256.png"
+            icon_target = built_app / "Contents" / "Resources" / "Katip.icns"
+            if not icon_source.exists():
+                raise FileNotFoundError(f"macOS app icon not found: {icon_source}")
+            icon_result = subprocess.run(
+                ["/usr/bin/sips", "-s", "format", "icns", str(icon_source), "--out", str(icon_target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if icon_result.returncode != 0:
+                detail = (icon_result.stderr or icon_result.stdout).strip()
+                raise RuntimeError(detail or "Could not create macOS app icon")
+            stock_icon = icon_target.with_name("applet.icns")
+            if stock_icon.exists():
+                stock_icon.unlink()
+
+            with info_plist.open("wb") as plist_file:
+                plistlib.dump(metadata, plist_file)
+
+            backup_dir = app_dir.with_name(f"{app_dir.name}.old")
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
+            if app_dir.exists():
+                app_dir.rename(backup_dir)
+            try:
+                shutil.move(str(built_app), str(app_dir))
+            except Exception:
+                if backup_dir.exists() and not app_dir.exists():
+                    backup_dir.rename(app_dir)
+                raise
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
         return True
     except Exception as e:
         print(f"[Desktop] Error installing macOS app: {e}")

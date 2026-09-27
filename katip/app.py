@@ -202,7 +202,7 @@ class KatipApp:
             if success:
                 print("[App] Metin aktif pencereye başarıyla yapıştırıldı!")
             else:
-                print(f"[App] Metin panoya kopyalandı (Ctrl+V ydotool gönderilemedi)")
+                print("[App] Metin panoya kopyalandı ancak otomatik yapıştırma gönderilemedi.")
 
             self.signals.processing_done.emit(text, latency)
 

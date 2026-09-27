@@ -112,22 +112,29 @@ class FloatingPill(QWidget):
     def set_audio_level(self, level: float) -> None:
         self.audio_level = max(0.0, min(1.0, level))
 
+    def _show_overlay(self) -> None:
+        """Show the status pill without taking focus from the user's app."""
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.show()
+        # On macOS, raise_() can activate the Qt tool window even with
+        # WA_ShowWithoutActivating. WindowStaysOnTopHint keeps the pill visible
+        # without explicitly raising it over the frontmost application.
+        if sys.platform != "darwin":
+            self.raise_()
+        self.repaint()
+
     def show_recording(self, mode: str) -> None:
         self._hide_timer.stop()
         self.state = "recording"
         self.mode = mode
         self.status_message = "Dinleniyor..."
-        self.show()
-        self.raise_()
-        self.repaint()
+        self._show_overlay()
 
     def show_processing(self) -> None:
         self._hide_timer.stop()
         self.state = "processing"
         self.status_message = "İşleniyor..."
-        self.show()
-        self.raise_()
-        self.repaint()
+        self._show_overlay()
 
     def show_success(self, latency: float = 0.0) -> None:
         self.state = "success"
@@ -135,17 +142,13 @@ class FloatingPill(QWidget):
             self.status_message = f"Yapıştırıldı! ({latency}s)"
         else:
             self.status_message = "Yapıştırıldı!"
-        self.show()
-        self.raise_()
-        self.repaint()
+        self._show_overlay()
         self._hide_timer.start(1600)
 
     def show_error(self, message: str) -> None:
         self.state = "error"
         self.status_message = message[:28] + ("..." if len(message) > 28 else "")
-        self.show()
-        self.raise_()
-        self.repaint()
+        self._show_overlay()
         self._hide_timer.start(3500)
 
     def hide_pill(self) -> None:

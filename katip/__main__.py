@@ -217,7 +217,7 @@ def main():
 
     print("=" * 60)
     print(f"🎙️  Katip v{__version__} Başlatıldı!")
-    print("📌  Kısayol: Ctrl+Alt+Space (veya 'katip --toggle')")
+    print(f"📌  Kısayol: {app.config.get('hotkey', 'Ctrl+Alt+Space')} (veya 'katip --toggle')")
     print("⚙️  Sistem çekmecesi (System Tray) üzerinden ayarlara ulaşabilirsiniz.")
     print("=" * 60)
 

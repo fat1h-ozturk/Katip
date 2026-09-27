@@ -303,8 +303,20 @@ class MacInjector(BaseInjector):
         """Sends Cmd+V keystroke via AppleScript."""
         script = 'tell application "System Events" to keystroke "v" using command down'
         try:
-            res = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
-            return res.returncode == 0
+            res = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0:
+                return True
+            detail = (res.stderr or res.stdout).strip()
+            if detail:
+                print(f"[MacInjector] AppleScript Cmd+V failed: {detail}")
+            else:
+                print(f"[MacInjector] AppleScript Cmd+V failed (exit {res.returncode}).")
+            return False
         except Exception as e:
             print(f"[MacInjector] AppleScript error: {e}")
             return False
