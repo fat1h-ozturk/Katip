@@ -5,6 +5,11 @@ from pathlib import Path
 
 block_cipher = None
 project_root = Path(os.path.abspath(".")).resolve()
+sys.path.insert(0, str(project_root))
+from katip import __version__
+
+windows_icon = project_root / "assets" / "katip.ico"
+macos_icon = project_root / "assets" / "katip.icns"
 
 # Collect assets
 datas = [
@@ -19,14 +24,23 @@ hiddenimports = [
     "webrtcvad",
     "pynput",
     "pynput.keyboard",
-    "pynput.keyboard._win32",
     "pynput.mouse",
-    "pynput.mouse._win32",
     "requests",
-    "winsound",
     "ctypes",
-    "ctypes.wintypes",
 ]
+
+if sys.platform.startswith("win"):
+    hiddenimports += [
+        "pynput.keyboard._win32",
+        "pynput.mouse._win32",
+        "winsound",
+        "ctypes.wintypes",
+    ]
+elif sys.platform == "darwin":
+    hiddenimports += [
+        "pynput.keyboard._darwin",
+        "pynput.mouse._darwin",
+    ]
 
 a = Analysis(
     [str(project_root / "run_katip.py")],
@@ -66,5 +80,29 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(project_root / "assets" / "katip.ico") if (project_root / "assets" / "katip.ico").exists() else None,
+    icon=(
+        str(windows_icon) if sys.platform.startswith("win") and windows_icon.exists()
+        else str(macos_icon) if sys.platform == "darwin" and macos_icon.exists()
+        else None
+    ),
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="Katip.app",
+        icon=str(macos_icon) if macos_icon.exists() else None,
+        bundle_identifier="com.talktowrite.katip",
+        version=__version__,
+        info_plist={
+            "CFBundleDisplayName": "Katip",
+            "LSUIElement": True,
+            "NSPrincipalClass": "NSApplication",
+            "NSMicrophoneUsageDescription": (
+                "Katip records audio when you start dictation."
+            ),
+            "NSAppleEventsUsageDescription": (
+                "Katip uses a paste shortcut to insert dictated text into the active app."
+            ),
+        },
+    )

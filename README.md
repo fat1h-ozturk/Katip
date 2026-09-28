@@ -4,6 +4,16 @@
 
 Mikrofonunuzdan konuşmanızı dinler; konuşma dili dolgularını ("ııı", "şey", "yani", "falan") ve dilbilgisi hatalarını anında temizler. Aktif olan herhangi bir pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları, terminal vb.) imleç odağını kaybetmeden doğrudan yazar.
 
+## İndir
+
+| İşletim sistemi | İndir |
+| --- | --- |
+| Windows 10/11 (x64) | [Katip Windows uygulamasını indir](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-Windows-x64.exe) |
+| macOS (Apple Silicon) | [Katip macOS ARM64 imajını indir](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-arm64.dmg) |
+| macOS (Intel) | [Katip macOS Intel imajını indir](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-x64.dmg) |
+
+macOS'ta DMG'yi açıp Katip'i Applications klasörüne sürükleyin. Uygulama Apple tarafından imzalanıp notarize edilmediğinden macOS ilk açılışta ayrıca onay isteyebilir. İndirme bağlantıları ilk GitHub Release oluşturulduğunda etkinleşir.
+
 ---
 
 ## ✨ Temel Özellikler

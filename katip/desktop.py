@@ -599,6 +599,11 @@ def ensure_desktop_installed() -> None:
     This ensures that when a user runs the app, it immediately becomes discoverable
     in their Application Search / Start Menu.
     """
+    # ASVS 5.3.2: do not persist a launcher path derived from a temporary DMG mount.
+    # The packaged macOS app is installed by dragging it into Applications.
+    if sys.platform.startswith("darwin") and getattr(sys, "frozen", False):
+        return
+
     if not is_desktop_installed():
         print("[Desktop] İlk çalıştırma algılandı: Katip uygulama menüsüne kaydediliyor...")
         install_desktop_entry()

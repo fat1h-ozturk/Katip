@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.egg-info/
 dist/
+assets/katip.icns
 build/
 .pytest_cache/
 .coverage

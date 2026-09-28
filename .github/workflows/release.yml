@@ -1,0 +1,125 @@
+name: Build desktop downloads
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            runner: windows-latest
+            asset: Katip-Windows-x64.exe
+          - label: macOS Apple Silicon
+            runner: macos-15
+            asset: Katip-macOS-arm64.dmg
+          - label: macOS Intel
+            runner: macos-15-intel
+            asset: Katip-macOS-x64.dmg
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Verify release tag matches project version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          import katip
+
+          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          expected_tag = f"v{version}"
+          if katip.__version__ != version:
+              raise SystemExit("katip.__version__ and pyproject.toml must match")
+          if os.environ["RELEASE_TAG"] != expected_tag:
+              raise SystemExit(f"Tag must be {expected_tag}; got {os.environ['RELEASE_TAG']}")
+          PY
+
+      - name: Install macOS audio build dependency
+        if: runner.os == 'macOS'
+        run: brew install portaudio
+
+      # ASVS 15.2.1: keep the release packager on a reviewed, explicit version.
+      - name: Install application and pinned packager
+        run: python -m pip install . "pyinstaller==6.20.0"
+
+      - name: Create macOS app icon
+        if: runner.os == 'macOS'
+        run: sips -s format icns assets/katip-256.png --out assets/katip.icns
+
+      - name: Build Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m PyInstaller katip.spec --clean --noconfirm
+          Copy-Item dist\Katip.exe dist\Katip-Windows-x64.exe
+
+      - name: Build macOS app and disk image
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_ASSET: ${{ matrix.asset }}
+        run: |
+          python -m PyInstaller katip.spec --clean --noconfirm
+          mkdir -p dmg-root
+          ditto dist/Katip.app dmg-root/Katip.app
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname Katip -srcfolder dmg-root -ov -format UDZO "dist/$RELEASE_ASSET"
+
+      # ASVS 5.3.2: release output paths come only from fixed, version-controlled matrix entries.
+      - name: Upload release asset
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download platform packages
+        uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          # ASVS 1.2.5: pass release data as quoted arguments, never interpolate it into shell source.
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Katip $RELEASE_TAG" \
+              --generate-notes
+          fi
