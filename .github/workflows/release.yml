@@ -129,5 +129,5 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --title "Katip $RELEASE_TAG" \
-              --generate-notes
+              --notes "Katip $RELEASE_TAG yayımlandı."
           fi
