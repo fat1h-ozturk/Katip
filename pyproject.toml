@@ -27,3 +27,13 @@ katip-gui = "katip.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["katip*"]
+
+[tool.setuptools.data-files]
+# ASVS 5.3.2: package only these trusted, fixed asset paths.
+"share/katip/assets" = [
+    "assets/katip.svg",
+    "assets/katip.ico",
+    "assets/katip-64.png",
+    "assets/katip-128.png",
+    "assets/katip-256.png",
+]

@@ -7,11 +7,12 @@ and provides an IPC trigger so CLI commands, scripts, or OS shortcuts can toggle
 import os
 import select
 import socket
+import stat
 import sys
 import threading
 from typing import Callable, List, Optional, Set
 
-SOCKET_PATH = "/tmp/katip.sock"
+SOCKET_PATH = os.path.join(os.path.expanduser("~"), ".katip.sock")
 TCP_PORT = 49215
 
 # macOS virtual key codes (US hardware positions). Reading these directly from
@@ -111,6 +112,10 @@ class HotkeyManager:
         self.on_open_settings = on_open_settings
         self.is_running = False
         self._threads: List[threading.Thread] = []
+        self._ipc_thread = None
+        self._ipc_server = None
+        self._ipc_lock_fd = None
+        self._ipc_inode = None
         self._active_keys: Set[int] = set()
         self._lock = threading.Lock()
         self._combo_triggered = False
@@ -122,13 +127,49 @@ class HotkeyManager:
         self._macos_pressed_modifiers: Set[int] = set()
         self._macos_combo = None
 
-    def start(self) -> None:
+    def start(self) -> bool:
         """Starts the platform IPC server and background hotkey listener."""
+        if self.is_running:
+            return True
+        if self._ipc_thread and self._ipc_thread.is_alive():
+            return False
+
+        # ASVS 15.4.2: reserve the single-instance endpoint before starting listeners.
+        server = socket.socket(socket.AF_INET if sys.platform.startswith("win") else socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            if sys.platform.startswith("win"):
+                server.bind(("127.0.0.1", TCP_PORT))
+            else:
+                import fcntl
+                lock_fd = os.open(SOCKET_PATH + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except Exception:
+                    os.close(lock_fd)
+                    raise
+                self._ipc_lock_fd = lock_fd
+                if os.path.exists(SOCKET_PATH):
+                    os.remove(SOCKET_PATH)
+                server.bind(SOCKET_PATH)
+                os.chmod(SOCKET_PATH, 0o600)
+                self._ipc_inode = os.stat(SOCKET_PATH).st_ino
+            server.listen(5)
+            server.settimeout(0.5)
+        except Exception as error:
+            server.close()
+            if self._ipc_lock_fd is not None:
+                os.close(self._ipc_lock_fd)
+                self._ipc_lock_fd = None
+            print(f"[Hotkey] Failed to start IPC server: {error}")
+            return False
+
+        self._ipc_server = server
         self.is_running = True
 
         # 1. Start IPC Server (TCP on Windows, Unix domain socket on Linux/macOS)
-        ipc_thread = threading.Thread(target=self._run_ipc_server, daemon=True)
+        ipc_thread = threading.Thread(target=self._run_ipc_server, args=(server,), daemon=True)
         ipc_thread.start()
+        self._ipc_thread = ipc_thread
         self._threads.append(ipc_thread)
 
         # 2. Start Global Hotkey Listener
@@ -142,6 +183,7 @@ class HotkeyManager:
             self._start_pynput_listener()
         else:
             print("[Hotkey] Notice: Neither evdev nor pynput is available. Global shortcuts will rely on CLI IPC (--toggle).")
+        return True
 
     def stop(self) -> None:
         self.is_running = False
@@ -165,79 +207,69 @@ class HotkeyManager:
                 thread.join(timeout=1.0)
             self._macos_thread = None
 
-        if not sys.platform.startswith("win") and os.path.exists(SOCKET_PATH):
-            try:
-                os.remove(SOCKET_PATH)
-            except Exception:
-                pass
+        if self._ipc_server is not None:
+            self._ipc_server.close()
+        if self._ipc_thread and self._ipc_thread is not threading.current_thread():
+            self._ipc_thread.join(timeout=2.0)
+        for thread in self._threads:
+            if thread is not self._ipc_thread and thread is not threading.current_thread():
+                thread.join(timeout=1.0)
+        self._threads.clear()
 
     # --- IPC SERVER (TCP on Windows, Unix Domain Socket on POSIX) ---
-    def _run_ipc_server(self) -> None:
-        server = None
+    def _run_ipc_server(self, server: socket.socket) -> None:
         try:
-            if sys.platform.startswith("win"):
-                server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                server.bind(("127.0.0.1", TCP_PORT))
-            else:
-                if os.path.exists(SOCKET_PATH):
-                    try:
+            while self.is_running:
+                try:
+                    conn, _ = server.accept()
+                    with conn:
+                        # ASVS 16.5.2: a silent client must not block every IPC command.
+                        conn.settimeout(1.0)
+                        data = conn.recv(128).decode("utf-8").strip()
+                        if data == "toggle":
+                            if self.on_toggle:
+                                self.on_toggle()
+                            conn.sendall(b"ok")
+                        elif data == "start":
+                            if self.on_press:
+                                self.on_press()
+                            elif self.on_toggle:
+                                self.on_toggle()
+                            conn.sendall(b"ok")
+                        elif data == "stop":
+                            if self.on_release:
+                                self.on_release()
+                            elif self.on_toggle:
+                                self.on_toggle()
+                            conn.sendall(b"ok")
+                        elif data == "ping":
+                            conn.sendall(b"pong")
+                        elif data == "notify_running":
+                            if self.on_notify_running:
+                                self.on_notify_running()
+                            conn.sendall(b"ok")
+                        elif data == "open_settings":
+                            if self.on_open_settings:
+                                self.on_open_settings()
+                            conn.sendall(b"ok")
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    if self.is_running:
+                        print(f"[Hotkey] IPC connection error: {e}")
+        finally:
+            server.close()
+            if self._ipc_inode is not None:
+                try:
+                    current = os.stat(SOCKET_PATH)
+                    if stat.S_ISSOCK(current.st_mode) and current.st_ino == self._ipc_inode:
                         os.remove(SOCKET_PATH)
-                    except Exception:
-                        pass
-                server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                server.bind(SOCKET_PATH)
-
-            server.listen(5)
-            server.settimeout(1.0)
-        except Exception as e:
-            print(f"[Hotkey] Failed to start IPC server: {e}")
-            return
-
-        while self.is_running:
-            try:
-                conn, _ = server.accept()
-                with conn:
-                    data = conn.recv(128).decode("utf-8").strip()
-                    if data == "toggle":
-                        if self.on_toggle:
-                            self.on_toggle()
-                        conn.sendall(b"ok")
-                    elif data == "start":
-                        if self.on_press:
-                            self.on_press()
-                        elif self.on_toggle:
-                            self.on_toggle()
-                        conn.sendall(b"ok")
-                    elif data == "stop":
-                        if self.on_release:
-                            self.on_release()
-                        elif self.on_toggle:
-                            self.on_toggle()
-                        conn.sendall(b"ok")
-                    elif data == "ping":
-                        conn.sendall(b"pong")
-                    elif data == "notify_running":
-                        if self.on_notify_running:
-                            self.on_notify_running()
-                        conn.sendall(b"ok")
-                    elif data == "open_settings":
-                        if self.on_open_settings:
-                            self.on_open_settings()
-                        conn.sendall(b"ok")
-            except socket.timeout:
-                continue
-            except Exception as e:
-                if self.is_running:
-                    print(f"[Hotkey] IPC connection error: {e}")
-
-        try:
-            if server:
-                server.close()
-            if not sys.platform.startswith("win") and os.path.exists(SOCKET_PATH):
-                os.remove(SOCKET_PATH)
-        except Exception:
-            pass
+                except OSError as error:
+                    print(f"[Hotkey] IPC socket cleanup failed: {error}")
+            if self._ipc_lock_fd is not None:
+                os.close(self._ipc_lock_fd)
+                self._ipc_lock_fd = None
+            self._ipc_server = None
 
     # --- macOS LISTENER (Quartz virtual key codes) ---
     def _start_macos_listener(self) -> None:
@@ -589,26 +621,22 @@ def send_ipc_message(message: str, timeout: float = 1.0) -> Optional[str]:
     """Sends an arbitrary message to a running Katip instance and returns the reply."""
     if sys.platform.startswith("win"):
         try:
-            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client.settimeout(timeout)
-            client.connect(("127.0.0.1", TCP_PORT))
-            client.sendall(message.encode("utf-8"))
-            reply = client.recv(128).decode("utf-8").strip()
-            client.close()
-            return reply
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+                client.settimeout(timeout)
+                client.connect(("127.0.0.1", TCP_PORT))
+                client.sendall(message.encode("utf-8"))
+                return client.recv(128).decode("utf-8").strip()
         except Exception:
             return None
     else:
         if not os.path.exists(SOCKET_PATH):
             return None
         try:
-            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client.settimeout(timeout)
-            client.connect(SOCKET_PATH)
-            client.sendall(message.encode("utf-8"))
-            reply = client.recv(128).decode("utf-8").strip()
-            client.close()
-            return reply
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(timeout)
+                client.connect(SOCKET_PATH)
+                client.sendall(message.encode("utf-8"))
+                return client.recv(128).decode("utf-8").strip()
         except Exception:
             return None
 
@@ -626,15 +654,12 @@ def open_running_settings() -> bool:
 
 def send_ipc_toggle() -> bool:
     """Sends a toggle trigger to a running Katip instance across OS platforms."""
-    res = send_ipc_message("toggle")
-    return res in ("ok", "pong", "") or res is not None
+    return send_ipc_message("toggle") == "ok"
 
 def send_ipc_start() -> bool:
     """Sends a start recording trigger to a running Katip instance."""
-    res = send_ipc_message("start")
-    return res in ("ok", "pong", "") or res is not None
+    return send_ipc_message("start") == "ok"
 
 def send_ipc_stop() -> bool:
     """Sends a stop recording trigger to a running Katip instance."""
-    res = send_ipc_message("stop")
-    return res in ("ok", "pong", "") or res is not None
+    return send_ipc_message("stop") == "ok"

@@ -4,12 +4,10 @@ Renders an animated, draggable, glassmorphic pill widget indicating recording, a
 """
 
 import math
-import random
 import sys
-from typing import Optional
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QGraphicsDropShadowEffect, QWidget
+from PySide6.QtWidgets import QWidget
 
 MODE_TITLES = {
     "dictation": "DİKTE",
@@ -74,7 +72,6 @@ class FloatingPill(QWidget):
         self.mode = "dictation"
         self.status_message = ""
         self.audio_level = 0.0
-        self.target_heights = [0.2] * 5
         self.current_heights = [0.2] * 5
 
         # Dragging support
@@ -84,7 +81,6 @@ class FloatingPill(QWidget):
         # Animation timer (60 FPS)
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._on_tick)
-        self._anim_timer.start(16)
 
         # Auto-hide timer for success/error
         self._hide_timer = QTimer(self)
@@ -124,6 +120,7 @@ class FloatingPill(QWidget):
         self.repaint()
 
     def show_recording(self, mode: str) -> None:
+        self._anim_timer.start(16)
         self._hide_timer.stop()
         self.state = "recording"
         self.mode = mode
@@ -131,12 +128,14 @@ class FloatingPill(QWidget):
         self._show_overlay()
 
     def show_processing(self) -> None:
+        self._anim_timer.start(16)
         self._hide_timer.stop()
         self.state = "processing"
         self.status_message = "İşleniyor..."
         self._show_overlay()
 
     def show_success(self, latency: float = 0.0) -> None:
+        self._anim_timer.stop()
         self.state = "success"
         if latency > 0:
             self.status_message = f"Yapıştırıldı! ({latency}s)"
@@ -146,12 +145,14 @@ class FloatingPill(QWidget):
         self._hide_timer.start(1600)
 
     def show_error(self, message: str) -> None:
+        self._anim_timer.stop()
         self.state = "error"
         self.status_message = message[:28] + ("..." if len(message) > 28 else "")
         self._show_overlay()
         self._hide_timer.start(3500)
 
     def hide_pill(self) -> None:
+        self._anim_timer.stop()
         self.state = "hidden"
         self.hide()
 

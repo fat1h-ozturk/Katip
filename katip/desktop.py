@@ -22,6 +22,15 @@ def get_project_root() -> Path:
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
+def get_assets_dir() -> Path:
+    source_assets = get_project_root() / "assets"
+    if (source_assets / "katip.svg").is_file():
+        return source_assets
+    return Path(sys.prefix) / "share" / "katip" / "assets"
+
+def _launcher_args(launcher: Path) -> list[str]:
+    return ["-m", "katip"] if not getattr(sys, "frozen", False) and launcher == Path(sys.executable).resolve() else []
+
 def get_launcher_path() -> Path:
     """Finds the primary executable or shell launcher."""
     if getattr(sys, "frozen", False):
@@ -51,12 +60,12 @@ def _get_linux_autostart_path() -> Path:
 
 def _install_linux_icons() -> None:
     """Installs SVG and PNG icons to user's ~/.local/share/icons/hicolor directory."""
-    root = get_project_root()
+    root = get_assets_dir()
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     hicolor_dir = data_home / "icons" / "hicolor"
 
     # 1. Scalable SVG
-    svg_source = root / "assets" / "katip.svg"
+    svg_source = root / "katip.svg"
     if svg_source.exists():
         target_dir = hicolor_dir / "scalable" / "apps"
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -64,7 +73,7 @@ def _install_linux_icons() -> None:
 
     # 2. Raster PNGs (64, 128, 256)
     for size in (64, 128, 256):
-        png_source = root / "assets" / f"katip-{size}.png"
+        png_source = root / f"katip-{size}.png"
         if png_source.exists():
             target_dir = hicolor_dir / f"{size}x{size}" / "apps"
             target_dir.mkdir(parents=True, exist_ok=True)
@@ -118,13 +127,14 @@ def _refresh_linux_desktop_database() -> None:
 def _generate_desktop_entry_content() -> str:
     launcher = get_launcher_path()
     project_root = get_project_root()
+    command = " ".join([f'"{launcher}"', *_launcher_args(launcher)])
     return f"""[Desktop Entry]
 Name=Katip
 GenericName=Sesli Dikte Asistanı
 GenericName[en]=Voice Dictation Assistant
 Comment=Wispr Flow & SuperWhisper alternatifi ultra hızlı sesli dikte
 Comment[en]=Ultra-fast AI voice dictation desktop assistant
-Exec="{launcher}" %U
+Exec={command} %U
 Path={project_root}
 Icon=katip
 Terminal=false
@@ -212,13 +222,13 @@ def detach_windows_console() -> None:
 
 def _ensure_windows_ico() -> Optional[Path]:
     """Ensures a Windows .ico icon exists in assets/ directory."""
-    root = get_project_root()
-    ico_path = root / "assets" / "katip.ico"
+    root = get_assets_dir()
+    ico_path = root / "katip.ico"
     if ico_path.exists():
         return ico_path
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve()
-    png_path = root / "assets" / "katip-256.png"
+    png_path = root / "katip-256.png"
     if png_path.exists():
         try:
             from PySide6.QtGui import QImage
@@ -272,22 +282,19 @@ def _create_windows_shortcut(
 ) -> bool:
     """Creates a Windows .lnk shortcut using PowerShell."""
     shortcut_path.parent.mkdir(parents=True, exist_ok=True)
-    if shortcut_path.exists():
-        try:
-            shortcut_path.unlink()
-        except Exception:
-            pass
     w_dir = working_dir if working_dir else target.parent
+    # ASVS 1.2.5: escape values at the PowerShell string boundary.
+    ps_quote = lambda value: "'" + str(value).replace("'", "''") + "'"
     ps_lines = [
         "$ws = New-Object -ComObject WScript.Shell;",
-        f"$s = $ws.CreateShortcut('{str(shortcut_path)}');",
-        f"$s.TargetPath = '{str(target)}';",
-        f"$s.WorkingDirectory = '{str(w_dir)}';",
-        f"$s.Arguments = '{arguments}';",
-        f"$s.Description = '{description}';",
+        f"$s = $ws.CreateShortcut({ps_quote(shortcut_path)});",
+        f"$s.TargetPath = {ps_quote(target)};",
+        f"$s.WorkingDirectory = {ps_quote(w_dir)};",
+        f"$s.Arguments = {ps_quote(arguments)};",
+        f"$s.Description = {ps_quote(description)};",
     ]
     if icon_path and icon_path.exists():
-        ps_lines.append(f"$s.IconLocation = '{str(icon_path)}';")
+        ps_lines.append(f"$s.IconLocation = {ps_quote(icon_path)};")
     ps_lines.append("$s.Save()")
     ps_command = " ".join(ps_lines)
     try:
@@ -314,7 +321,7 @@ def _install_mac_app() -> bool:
         log_path = Path.home() / "Library" / "Logs" / "Katip.log"
         access_check = f"/usr/bin/test -x {shlex.quote(str(launcher))}"
         shell_command = (
-            f"nohup {shlex.quote(str(launcher))} >> {shlex.quote(str(log_path))} "
+            f"nohup {shlex.quote(str(launcher))} {' '.join(_launcher_args(launcher))} >> {shlex.quote(str(log_path))} "
             "2>&1 < /dev/null &"
         )
         applescript_access_check = access_check.replace("\\", "\\\\").replace('"', '\\"')
@@ -365,7 +372,7 @@ def _install_mac_app() -> bool:
             # Keep the explicit .icns file as the only bundle icon source.
             metadata.pop("CFBundleIconName", None)
 
-            icon_source = get_project_root() / "assets" / "katip-256.png"
+            icon_source = get_assets_dir() / "katip-256.png"
             icon_target = built_app / "Contents" / "Resources" / "Katip.icns"
             if not icon_source.exists():
                 raise FileNotFoundError(f"macOS app icon not found: {icon_source}")
@@ -407,7 +414,7 @@ def _uninstall_mac_app() -> bool:
     try:
         app_dir = _get_mac_app_path()
         if app_dir.exists():
-            shutil.rmtree(app_dir, ignore_errors=True)
+            shutil.rmtree(app_dir)
         return True
     except Exception as e:
         print(f"[Desktop] Error removing macOS app: {e}")
@@ -560,21 +567,12 @@ def set_autostart(enable: bool) -> bool:
             if enable:
                 plist_path.parent.mkdir(parents=True, exist_ok=True)
                 launcher = get_launcher_path()
-                plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.talktowrite.app</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{launcher}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>"""
-                plist_path.write_text(plist_content, encoding="utf-8")
+                # ASVS 1.2.1: plistlib escapes executable paths for XML.
+                plist_path.write_bytes(plistlib.dumps({
+                    "Label": "com.talktowrite.app",
+                    "ProgramArguments": [str(launcher), *_launcher_args(launcher)],
+                    "RunAtLoad": True,
+                }))
             else:
                 if plist_path.exists():
                     plist_path.unlink()
@@ -614,13 +612,14 @@ def purge_all(remove_config: bool = True) -> bool:
     and optionally the user configuration directory.
     """
     success = uninstall_desktop_entry()
-    set_autostart(False)
+    if not set_autostart(False):
+        success = False
     if remove_config:
         try:
             from .config import get_config_dir
             cfg = get_config_dir()
             if cfg.exists():
-                shutil.rmtree(cfg, ignore_errors=True)
+                shutil.rmtree(cfg)
         except Exception as e:
             print(f"[Desktop] Error removing config dir: {e}")
             success = False

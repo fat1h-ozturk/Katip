@@ -18,6 +18,7 @@ class BaseInjector(abc.ABC):
 
     def __init__(self, restore_clipboard: bool = False):
         self.restore_clipboard = restore_clipboard
+        self.last_error = ""
 
     @abc.abstractmethod
     def get_current_clipboard(self) -> Optional[str]:
@@ -31,6 +32,10 @@ class BaseInjector(abc.ABC):
     def simulate_paste(self) -> bool:
         pass
 
+    def can_restore_clipboard(self) -> bool:
+        """Only allow restoration when every present clipboard format is plain text."""
+        return False
+
     def inject_text(self, text: str) -> bool:
         """
         Main injection routine:
@@ -40,16 +45,26 @@ class BaseInjector(abc.ABC):
         4. Synthesizes paste shortcut (Ctrl+V on Linux/Win, Cmd+V on macOS).
         5. Optionally restores previous clipboard.
         """
+        self.last_error = ""
         if not text:
+            self.last_error = "Yapıştırılacak metin boş."
             return False
 
         old_clipboard = None
         if self.restore_clipboard:
+            # ASVS 16.5.3: do not replace data that cannot be restored exactly.
+            if not self.can_restore_clipboard():
+                self.last_error = "Mevcut pano içeriği güvenle geri yüklenemiyor; pano korunuyor."
+                return False
             old_clipboard = self.get_current_clipboard()
+            if old_clipboard is None:
+                self.last_error = "Mevcut pano okunamadı; pano korunuyor."
+                return False
 
         copied = self.set_clipboard(text)
         if not copied:
             print("[Injector] Failed to copy text to clipboard.")
+            self.last_error = "Metin panoya kopyalanamadı."
             return False
 
         # Brief delay so active app sees updated clipboard
@@ -57,9 +72,15 @@ class BaseInjector(abc.ABC):
 
         pasted = self.simulate_paste()
 
+        if not pasted:
+            self.last_error = "Otomatik yapıştırma başarısız; metin panoda tutuldu."
+            return False
+
         if self.restore_clipboard and old_clipboard is not None:
             time.sleep(0.3)
-            self.set_clipboard(old_clipboard)
+            if not self.set_clipboard(old_clipboard):
+                self.last_error = "Metin yapıştırıldı ancak önceki pano geri yüklenemedi."
+                return False
 
         return pasted
 
@@ -77,6 +98,22 @@ class LinuxInjector(BaseInjector):
         self.has_ydotool = is_linux and (shutil.which("ydotool") is not None)
         self.has_xdotool = is_linux and (shutil.which("xdotool") is not None)
 
+    def can_restore_clipboard(self) -> bool:
+        commands = []
+        if self.has_wl_paste:
+            commands.append(["wl-paste", "--list-types"])
+        if self.has_xclip:
+            commands.append(["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"])
+        for command in commands:
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=1)
+                if result.returncode == 0:
+                    plain = {"TARGETS", "TIMESTAMP", "MULTIPLE", "SAVE_TARGETS", "UTF8_STRING", "STRING", "TEXT", "COMPOUND_TEXT"}
+                    return all(kind in plain or kind.startswith("text/plain") for kind in result.stdout.splitlines())
+            except Exception:
+                pass
+        return False
+
     def get_current_clipboard(self) -> Optional[str]:
         if self.has_wl_paste:
             try:
@@ -85,7 +122,7 @@ class LinuxInjector(BaseInjector):
                     return res.stdout
             except Exception:
                 pass
-        elif self.has_xclip:
+        if self.has_xclip:
             try:
                 res = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=1)
                 if res.returncode == 0:
@@ -108,16 +145,6 @@ class LinuxInjector(BaseInjector):
                 return True
             except Exception as e:
                 print(f"[LinuxInjector] xclip error: {e}")
-
-        # PySide6 fallback if available
-        try:
-            from PySide6.QtGui import QGuiApplication
-            clip = QGuiApplication.clipboard()
-            if clip:
-                clip.setText(text)
-                return True
-        except Exception:
-            pass
 
         return False
 
@@ -158,6 +185,25 @@ class LinuxInjector(BaseInjector):
 class WindowsInjector(BaseInjector):
     """Windows text injector using native Win32 user32.dll and clipboard."""
 
+    def can_restore_clipboard(self) -> bool:
+        try:
+            user32 = ctypes.windll.user32
+            if not user32.OpenClipboard(None):
+                return False
+            try:
+                formats = set()
+                current = 0
+                while True:
+                    current = user32.EnumClipboardFormats(current)
+                    if not current:
+                        break
+                    formats.add(current)
+                return len(formats) == user32.CountClipboardFormats() and formats <= {1, 7, 13, 16}
+            finally:
+                user32.CloseClipboard()
+        except Exception:
+            return False
+
     def get_current_clipboard(self) -> Optional[str]:
         """Reads text from Windows clipboard via Win32 API (thread-safe)."""
         try:
@@ -188,6 +234,8 @@ class WindowsInjector(BaseInjector):
                     if p_data:
                         text = ctypes.c_wchar_p(p_data).value
                         kernel32.GlobalUnlock(h_data)
+                elif user32.CountClipboardFormats() == 0:
+                    text = ""
                 return text
             finally:
                 user32.CloseClipboard()
@@ -196,8 +244,8 @@ class WindowsInjector(BaseInjector):
 
     def set_clipboard(self, text: str) -> bool:
         """Sets text onto Windows system clipboard via native Win32 API (thread-safe)."""
+        h_mem = None
         try:
-            import ctypes
             CF_UNICODETEXT = 13
             user32 = ctypes.windll.user32
             kernel32 = ctypes.windll.kernel32
@@ -207,34 +255,82 @@ class WindowsInjector(BaseInjector):
             kernel32.GlobalLock.restype = ctypes.c_void_p
             kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
             kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
             user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+            user32.CreateWindowExW.restype = ctypes.c_void_p
+            user32.CreateWindowExW.argtypes = [
+                ctypes.c_ulong, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+            ]
+            user32.DestroyWindow.argtypes = [ctypes.c_void_p]
             user32.SetClipboardData.restype = ctypes.c_void_p
             user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
 
-            # Retry up to 10 times in case clipboard is temporarily locked
-            for _ in range(10):
-                if user32.OpenClipboard(None):
-                    break
-                time.sleep(0.03)
-            else:
-                print("[WindowsInjector] Could not open clipboard (locked by another process).")
+            def allocate(value: str):
+                encoded = value.encode("utf-16-le") + b"\x00\x00"
+                handle = kernel32.GlobalAlloc(0x0042, len(encoded))  # GMEM_MOVEABLE | GMEM_ZEROINIT
+                if not handle:
+                    return None
+                pointer = kernel32.GlobalLock(handle)
+                if not pointer:
+                    kernel32.GlobalFree(handle)
+                    return None
+                try:
+                    ctypes.memmove(pointer, encoded, len(encoded))
+                except Exception:
+                    kernel32.GlobalUnlock(handle)
+                    kernel32.GlobalFree(handle)
+                    return None
+                kernel32.GlobalUnlock(handle)
+                return handle
+
+            previous_text = self.get_current_clipboard()
+            h_mem = allocate(text)
+            if not h_mem:
                 return False
 
-            try:
-                user32.EmptyClipboard()
-                encoded = text.encode("utf-16-le") + b"\x00\x00"
-                h_mem = kernel32.GlobalAlloc(0x0042, len(encoded))  # GMEM_MOVEABLE | GMEM_ZEROINIT
-                if h_mem:
-                    p_mem = kernel32.GlobalLock(h_mem)
-                    if p_mem:
-                        ctypes.memmove(p_mem, encoded, len(encoded))
-                        kernel32.GlobalUnlock(h_mem)
-                        res = user32.SetClipboardData(CF_UNICODETEXT, h_mem)
-                        return bool(res)
+            # ASVS 1.4.3: release our allocation unless SetClipboardData transfers ownership.
+            owner = user32.CreateWindowExW(0, "STATIC", "KatipClipboard", 0, 0, 0, 0, 0, None, None, None, None)
+            if not owner:
+                kernel32.GlobalFree(h_mem)
+                h_mem = None
                 return False
+            try:
+                for _ in range(10):
+                    if user32.OpenClipboard(owner):
+                        break
+                    time.sleep(0.03)
+                else:
+                    print("[WindowsInjector] Could not open clipboard (locked by another process).")
+                    kernel32.GlobalFree(h_mem)
+                    h_mem = None
+                    return False
+                try:
+                    if not user32.EmptyClipboard():
+                        kernel32.GlobalFree(h_mem)
+                        h_mem = None
+                        return False
+                    if user32.SetClipboardData(CF_UNICODETEXT, h_mem):
+                        h_mem = None
+                        return True
+                    kernel32.GlobalFree(h_mem)
+                    h_mem = None
+                    if previous_text is not None:
+                        recovery = allocate(previous_text)
+                        if recovery and not user32.SetClipboardData(CF_UNICODETEXT, recovery):
+                            kernel32.GlobalFree(recovery)
+                    return False
+                finally:
+                    user32.CloseClipboard()
             finally:
-                user32.CloseClipboard()
+                user32.DestroyWindow(owner)
         except Exception as e:
+            if h_mem:
+                try:
+                    kernel32.GlobalFree(h_mem)
+                except Exception:
+                    pass
             print(f"[WindowsInjector] Clipboard error: {e}")
             return False
 
@@ -272,6 +368,17 @@ class WindowsInjector(BaseInjector):
 class MacInjector(BaseInjector):
     """macOS text injector using pbcopy/pbpaste and AppleScript System Events (Cmd+V)."""
 
+    def can_restore_clipboard(self) -> bool:
+        try:
+            result = subprocess.run(["osascript", "-e", "clipboard info"], capture_output=True, text=True, timeout=1)
+            if result.returncode != 0:
+                return False
+            # AppleScript reports each representation as {type, byte count}.
+            types = [entry.split(",", 1)[0].strip(" {}") for entry in result.stdout.split("},")]
+            return all(kind in {"string", "Unicode text", "«class utf8»", "«class ut16»"} for kind in types if kind)
+        except Exception:
+            return False
+
     def get_current_clipboard(self) -> Optional[str]:
         try:
             res = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=1)
@@ -288,15 +395,6 @@ class MacInjector(BaseInjector):
         except Exception as e:
             print(f"[MacInjector] pbcopy error: {e}")
 
-        # PySide6 fallback
-        try:
-            from PySide6.QtGui import QGuiApplication
-            clip = QGuiApplication.clipboard()
-            if clip:
-                clip.setText(text)
-                return True
-        except Exception:
-            pass
         return False
 
     def simulate_paste(self) -> bool:
@@ -326,13 +424,24 @@ class TextInjector:
     """Factory and unified proxy for platform-specific text injection."""
 
     def __init__(self, restore_clipboard: bool = False, terminal_paste_mode: bool = False):
-        self.restore_clipboard = restore_clipboard
         if sys.platform.startswith("win"):
             self._backend: BaseInjector = WindowsInjector(restore_clipboard=restore_clipboard)
         elif sys.platform == "darwin":
             self._backend: BaseInjector = MacInjector(restore_clipboard=restore_clipboard)
         else:
             self._backend: BaseInjector = LinuxInjector(restore_clipboard=restore_clipboard, terminal_paste=terminal_paste_mode)
+
+    @property
+    def restore_clipboard(self) -> bool:
+        return self._backend.restore_clipboard
+
+    @restore_clipboard.setter
+    def restore_clipboard(self, value: bool) -> None:
+        self._backend.restore_clipboard = value
+
+    @property
+    def last_error(self) -> str:
+        return self._backend.last_error
 
     def get_current_clipboard(self) -> Optional[str]:
         return self._backend.get_current_clipboard()

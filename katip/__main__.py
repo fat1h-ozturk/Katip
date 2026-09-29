@@ -4,7 +4,6 @@ CLI and Desktop entry point for Katip.
 
 import argparse
 import sys
-from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -14,7 +13,7 @@ from .desktop import (
     attach_windows_console,
     detach_windows_console,
     ensure_desktop_installed,
-    get_project_root,
+    get_assets_dir,
     install_desktop_entry,
     is_autostart_enabled,
     is_desktop_installed,
@@ -131,7 +130,9 @@ def main():
             sys.exit(0)
         else:
             enable = args.autostart == "on"
-            set_autostart(enable)
+            if not set_autostart(enable):
+                print("[Katip] Başlangıç ayarı değiştirilemedi.")
+                sys.exit(1)
             print(f"[Katip] Başlangıçta çalıştırma {'açıldı ✓' if enable else 'kapatıldı ✗'}.")
             sys.exit(0)
 
@@ -206,14 +207,22 @@ def main():
     q_app.setQuitOnLastWindowClosed(False)
 
     # Set application icon
-    icon_svg = get_project_root() / "assets" / "katip.svg"
-    icon_png = get_project_root() / "assets" / "katip-256.png"
+    icon_svg = get_assets_dir() / "katip.svg"
+    icon_png = get_assets_dir() / "katip-256.png"
     if icon_svg.exists():
         q_app.setWindowIcon(QIcon(str(icon_svg)))
     elif icon_png.exists():
         q_app.setWindowIcon(QIcon(str(icon_png)))
 
-    app = KatipApp(q_app)
+    try:
+        app = KatipApp(q_app)
+    except RuntimeError as error:
+        from PySide6.QtWidgets import QMessageBox
+        if is_instance_running():
+            open_running_settings()
+        else:
+            QMessageBox.warning(None, "Katip Başlatılamadı", str(error))
+        sys.exit(1)
 
     print("=" * 60)
     print(f"🎙️  Katip v{__version__} Başlatıldı!")

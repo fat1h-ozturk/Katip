@@ -6,7 +6,9 @@
 cd "$(dirname "$0")"
 chmod +x uninstall.sh 2>/dev/null || true
 ./uninstall.sh
+status=$?
 
 echo ""
 echo "Pencereyi kapatmak icin Enter'a basin..."
 read -r
+exit "$status"

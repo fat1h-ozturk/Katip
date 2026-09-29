@@ -42,6 +42,13 @@ if not defined PY_CMD (
     exit /b 1
 )
 
+%PY_CMD% -c "import sys; sys.exit(sys.version_info < (3, 10))" >nul 2>&1
+if errorlevel 1 (
+    echo [HATA] Python 3.10 veya ustu gereklidir.
+    pause
+    exit /b 1
+)
+
 echo [BILGI] Kullanilan Python: %PY_CMD%
 
 if not exist ".venv" (
@@ -55,16 +62,14 @@ if not exist ".venv" (
 )
 
 echo [BILGI] Bagimliliklar yukleniyor...
-call .venv\Scripts\activate.bat
-call python -m pip install --upgrade pip
-call python -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install --upgrade pip
 if errorlevel 1 (
     echo [HATA] Bagimliliklar yuklenirken bir sorun olustu.
     pause
     exit /b 1
 )
 
-call python -m pip install -e . --no-deps
+.venv\Scripts\python.exe -m pip install -e .
 if errorlevel 1 (
     echo [HATA] Paket gelistirme modunda yuklenemedi.
     pause
@@ -72,7 +77,12 @@ if errorlevel 1 (
 )
 
 echo [BILGI] Baslat Menusune ve Masaustune kisayol ekleniyor...
-call python -m katip --install
+.venv\Scripts\python.exe -m katip --install
+if errorlevel 1 (
+    echo [HATA] Uygulama kisayollari olusturulamadi.
+    pause
+    exit /b 1
+)
 
 echo ======================================================
 echo Kurulum Tamamlandi!

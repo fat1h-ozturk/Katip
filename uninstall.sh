@@ -27,33 +27,35 @@ fi
 
 echo ""
 echo "1/4 Çalışan Katip süreçleri durduruluyor..."
-pkill -f "katip" 2>/dev/null || true
+pkill -x Katip 2>/dev/null || true
+pkill -f '(^|/)python[0-9.]* -m katip( |$)' 2>/dev/null || true
 
 echo "2/4 Sistem entegrasyonu ve ayarlar temizleniyor..."
+purge_failed=0
 if [ -f ".venv/bin/python" ]; then
-    .venv/bin/python -m katip --purge 2>/dev/null || true
+    .venv/bin/python -m katip --purge || purge_failed=1
 fi
 
 # Platform-specific manual cleanup fallback
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    rm -rf "$HOME/Applications/Katip.app" 2>/dev/null || true
+    rm -rf "$HOME/Applications/Katip.app"
     if [ -f "$HOME/Library/LaunchAgents/com.talktowrite.app.plist" ]; then
         launchctl unload "$HOME/Library/LaunchAgents/com.talktowrite.app.plist" 2>/dev/null || true
-        rm -f "$HOME/Library/LaunchAgents/com.talktowrite.app.plist" 2>/dev/null || true
+        rm -f "$HOME/Library/LaunchAgents/com.talktowrite.app.plist"
     fi
-    rm -rf "$HOME/Library/Application Support/katip" 2>/dev/null || true
+    rm -rf "$HOME/Library/Application Support/katip"
 else
     # Linux
     DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
     CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
-    rm -f "$DATA_HOME/applications/katip.desktop" 2>/dev/null || true
-    rm -f "$CONFIG_HOME/autostart/katip.desktop" 2>/dev/null || true
-    rm -f "$DATA_HOME/icons/hicolor/scalable/apps/katip.svg" 2>/dev/null || true
-    rm -f "$DATA_HOME/icons/hicolor/"*x*/apps/katip.png 2>/dev/null || true
-    rm -rf "$CONFIG_HOME/katip" 2>/dev/null || true
-    rm -f "/tmp/katip.sock" 2>/dev/null || true
+    rm -f "$DATA_HOME/applications/katip.desktop"
+    rm -f "$CONFIG_HOME/autostart/katip.desktop"
+    rm -f "$DATA_HOME/icons/hicolor/scalable/apps/katip.svg"
+    rm -f "$DATA_HOME/icons/hicolor/"*x*/apps/katip.png
+    rm -rf "$CONFIG_HOME/katip"
+    rm -f "/tmp/katip.sock"
 
     if command -v update-desktop-database &>/dev/null; then
         update-desktop-database "$DATA_HOME/applications" 2>/dev/null || true
@@ -63,8 +65,13 @@ else
     fi
 fi
 
+if [ "$purge_failed" -ne 0 ]; then
+    echo "❌ Sistem entegrasyonu tamamen temizlenemedi."
+    exit 1
+fi
+
 echo "3/4 Sanal ortam ve derleme artıkları siliniyor..."
-rm -rf .venv .pytest_cache katip.egg-info build dist __pycache__ 2>/dev/null || true
+rm -rf .venv .pytest_cache katip.egg-info build dist __pycache__
 
 echo "4/4 Sistem temizliği tamamlandı!"
 echo ""

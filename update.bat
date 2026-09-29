@@ -26,15 +26,24 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-if exist ".venv\Scripts\activate.bat" (
+if exist ".venv\Scripts\python.exe" (
     echo [BILGI] Bagimliliklar guncelleniyor...
-    call .venv\Scripts\activate.bat
-    call python -m pip install -r requirements.txt
-    call python -m pip install -e . --no-deps
-    call python -m katip --install
+    .venv\Scripts\python.exe -m pip install -e .
+    if errorlevel 1 (
+        echo [HATA] Bagimliliklar guncellenemedi.
+        pause
+        exit /b 1
+    )
+    .venv\Scripts\python.exe -m katip --install
+    if errorlevel 1 (
+        echo [HATA] Uygulama kisayollari yenilenemedi.
+        pause
+        exit /b 1
+    )
 ) else (
     echo [BILGI] Sanal ortam bulunamadi, tam kurulum calistiriliyor...
     call install.bat
+    if errorlevel 1 exit /b 1
     exit /b 0
 )
 

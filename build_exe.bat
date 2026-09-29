@@ -1,4 +1,5 @@
 @echo off
+setlocal
 chcp 65001 >nul 2>&1
 REM ==============================================================================
 REM Katip: One-Click Standalone Executable Builder (PyInstaller)
@@ -19,10 +20,10 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo [BILGI] PyInstaller kontrol ediliyor...
-.venv\Scripts\python.exe -m pip show pyinstaller >nul 2>&1
+.venv\Scripts\python.exe -c "import PyInstaller; assert PyInstaller.__version__ == '6.20.0'" >nul 2>&1
 if errorlevel 1 (
-    echo [BILGI] PyInstaller yukleniyor...
-    .venv\Scripts\python.exe -m pip install pyinstaller
+    echo [BILGI] PyInstaller 6.20.0 yukleniyor...
+    .venv\Scripts\python.exe -m pip install pyinstaller==6.20.0
     if errorlevel 1 (
         echo [HATA] PyInstaller yuklenemedi!
         pause
@@ -30,10 +31,27 @@ if errorlevel 1 (
     )
 )
 
+for /f "delims=" %%I in ('.venv\Scripts\python.exe -c "import sys; print(sys.base_prefix)"') do set "PY_BASE=%%I"
+if not defined PY_BASE (
+    echo [HATA] Python kurulum yolu belirlenemedi!
+    pause
+    exit /b 1
+)
+
+REM ASVS 15.2.4: PyInstaller baska araclarin DLL dosyalarini PATH uzerinden toplamasin.
+set "PATH=%~dp0.venv\Scripts;%~dp0.venv;%PY_BASE%;%SystemRoot%\System32;%SystemRoot%"
+
 echo [BILGI] Standalone Katip.exe derleniyor (Bu islem 1-2 dakika surebilir)...
-.venv\Scripts\pyinstaller.exe katip.spec --clean --noconfirm
+.venv\Scripts\python.exe -m PyInstaller katip.spec --clean --noconfirm
 if errorlevel 1 (
     echo [HATA] Derleme basarisiz oldu!
+    pause
+    exit /b 1
+)
+
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$ErrorActionPreference = 'Stop'; $p = Start-Process -FilePath (Resolve-Path 'dist\Katip.exe').Path -ArgumentList '--version' -PassThru -WindowStyle Hidden; if (-not $p.WaitForExit(30000)) { taskkill.exe /PID $p.Id /T /F; exit 1 }; $p.Refresh(); exit $p.ExitCode"
+if errorlevel 1 (
+    echo [HATA] Derlenen EXE baslatma kontrolunu gecemedi!
     pause
     exit /b 1
 )

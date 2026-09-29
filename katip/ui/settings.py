@@ -4,8 +4,10 @@ Allows configuring API keys, AI providers, models, hotkeys, and custom vocabular
 """
 
 from typing import Callable, Optional
+from contextlib import suppress
 import sys
-from PySide6.QtCore import Qt, QTimer, Signal
+import unicodedata
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,14 +20,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from ..audio import get_input_devices
-from ..config import ConfigManager
+from ..config import ConfigManager, DEFAULT_GEMINI_MODEL, normalize_vocabulary_aliases
+from ..prompts import build_whisper_prompt
 from .hotkey_recorder import HotkeyRecorderWidget
 from ..desktop import (
     install_desktop_entry,
@@ -104,20 +106,42 @@ QCheckBox {
 }
 """
 
+
+def parse_vocabulary_aliases(text: str) -> dict[str, str]:
+    """Parse multiline hints and detect conflicts before a dict can overwrite them."""
+    aliases = {}
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        if line.count("=>") != 1:
+            raise ValueError(f"{line_number}. satır 'varyant => yazım' biçiminde olmalıdır.")
+        variant, spelling = (unicodedata.normalize("NFC", part.strip()) for part in line.split("=>"))
+        pair = normalize_vocabulary_aliases({variant: spelling})
+        if variant in aliases and aliases[variant] != spelling:
+            raise ValueError(f"{line_number}. satır: Aynı varyant farklı yazımlara bağlanamaz: {variant}")
+        aliases.update(pair)
+        if len(aliases) > 100:
+            raise ValueError("Yazım eşleşmeleri en fazla 100 kayıt olabilir.")
+    return aliases
+
 class SettingsDialog(QDialog):
     """Settings modal window for configuring Katip."""
 
     config_updated = Signal()
 
-    def __init__(self, config: ConfigManager, parent=None):
+    def __init__(self, config: ConfigManager, parent=None, can_edit: Optional[Callable[[], bool]] = None):
         super().__init__(parent)
         self.config = config
+        self.can_edit = can_edit or (lambda: True)
         self.setWindowTitle("Katip Ayarları")
         self.resize(540, 650)
         self.setStyleSheet(DARK_STYLE)
 
         self._build_ui()
         self._load_values()
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._reset_save_btn)
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -150,7 +174,7 @@ class SettingsDialog(QDialog):
         ai_layout.setSpacing(10)
 
         self.provider_combo = QComboBox()
-        self.provider_combo.addItem("Google Gemini (Önerilen - Ücretsiz & Hızlı)", "gemini")
+        self.provider_combo.addItem("Google Gemini", "gemini")
         self.provider_combo.addItem("Groq Cloud (Whisper + Llama 3)", "groq")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         ai_layout.addRow("Sağlayıcı:", self.provider_combo)
@@ -170,7 +194,8 @@ class SettingsDialog(QDialog):
 
         # Gemini Model
         self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.addItems(["gemini-2.0-flash", "gemini-1.5-flash"])
+        self.gemini_model_combo.setEditable(True)
+        self.gemini_model_combo.addItems([DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite"])
         self.gemini_model_label = QLabel("Gemini Modeli:")
         ai_layout.addRow(self.gemini_model_label, self.gemini_model_combo)
 
@@ -260,6 +285,17 @@ class SettingsDialog(QDialog):
         self.vocab_edit.setPlaceholderText("Örn: Katip, Gemini, PySide6, Docker, Kubernetes, Fatih")
         vocab_layout.addWidget(vocab_info)
         vocab_layout.addWidget(self.vocab_edit)
+        self.aliases_edit = QTextEdit()
+        self.aliases_edit.setPlaceholderText("Örn: paysayd altı => PySide6")
+        self.aliases_edit.setFixedHeight(80)
+        self.aliases_edit.setAccessibleName("Telaffuz ve yazım eşleşmeleri")
+        vocab_layout.addWidget(QLabel("Telaffuz / yazım ipuçları (her satır: varyant => doğru yazım):"))
+        vocab_layout.addWidget(self.aliases_edit)
+        self.whisper_budget_label = QLabel()
+        self.whisper_budget_label.setWordWrap(True)
+        vocab_layout.addWidget(self.whisper_budget_label)
+        self.vocab_edit.textChanged.connect(self._update_whisper_budget_hint)
+        self.aliases_edit.textChanged.connect(self._update_whisper_budget_hint)
         content_layout.addWidget(vocab_group)
 
         # 4. Preferences Checkboxes
@@ -299,7 +335,6 @@ class SettingsDialog(QDialog):
         desktop_layout.addLayout(menu_row)
 
         self.autostart_check = QCheckBox("Bilgisayar açıldığında arka planda otomatik başlat (Autostart)")
-        self.autostart_check.toggled.connect(self._on_autostart_toggled)
         desktop_layout.addWidget(self.autostart_check)
 
         content_layout.addWidget(desktop_group)
@@ -358,15 +393,16 @@ class SettingsDialog(QDialog):
 
     def _toggle_desktop_entry(self) -> None:
         if is_desktop_installed():
-            uninstall_desktop_entry()
-            QMessageBox.information(self, "Bilgi", "Katip uygulama menüsünden kaldırıldı.")
+            success = uninstall_desktop_entry()
+            message = "Katip uygulama menüsünden kaldırıldı."
         else:
-            install_desktop_entry()
-            QMessageBox.information(self, "Bilgi", "Katip uygulama menüsüne başarıyla kaydedildi!")
+            success = install_desktop_entry()
+            message = "Katip uygulama menüsüne başarıyla kaydedildi!"
+        if success:
+            QMessageBox.information(self, "Bilgi", message)
+        else:
+            QMessageBox.warning(self, "İşlem Başarısız", "Uygulama menüsü kaydı değiştirilemedi.")
         self._update_desktop_status()
-
-    def _on_autostart_toggled(self, checked: bool) -> None:
-        set_autostart(checked)
 
     def _load_values(self) -> None:
         provider = self.config.get("provider", "gemini")
@@ -375,7 +411,7 @@ class SettingsDialog(QDialog):
             self.provider_combo.setCurrentIndex(idx)
 
         self.gemini_key_edit.setText(self.config.get("gemini_api_key", ""))
-        self.gemini_model_combo.setCurrentText(self.config.get("gemini_model", "gemini-2.0-flash"))
+        self.gemini_model_combo.setCurrentText(self.config.get("gemini_model", DEFAULT_GEMINI_MODEL))
         self.groq_key_edit.setText(self.config.get("groq_api_key", ""))
 
         stt_model = self.config.get("groq_stt_model", "whisper-large-v3-turbo")
@@ -411,6 +447,9 @@ class SettingsDialog(QDialog):
 
         vocab = self.config.get("custom_vocabulary", [])
         self.vocab_edit.setText(", ".join(vocab))
+        aliases = self.config.get("vocabulary_aliases", {})
+        self.aliases_edit.setPlainText("\n".join(f"{variant} => {spelling}" for variant, spelling in aliases.items()))
+        self._update_whisper_budget_hint()
 
         self.sound_check.setChecked(self.config.get("sound_effects", True))
         self.restore_clip_check.setChecked(self.config.get("restore_clipboard", False))
@@ -424,51 +463,79 @@ class SettingsDialog(QDialog):
         self._on_provider_changed()
 
     def _save_settings(self) -> None:
-        self.config.set("provider", self.provider_combo.currentData())
-        self.config.set("gemini_api_key", self.gemini_key_edit.text().strip())
-        self.config.set("gemini_model", self.gemini_model_combo.currentText().strip())
-        self.config.set("groq_api_key", self.groq_key_edit.text().strip())
-        self.config.set("groq_stt_model", self.groq_stt_combo.currentData())
-        self.config.set("groq_llm_model", self.groq_llm_combo.currentData())
-        self.config.set("language", self.language_combo.currentData())
-        self.config.set("input_device_index", self.mic_combo.currentData())
-        self.config.set("vad_mode", self.vad_combo.currentData())
-        self.config.set("hotkey", self.hotkey_edit.get_hotkey())
-        self.config.set("trigger_mode", self.trigger_mode_combo.currentData())
-
-        raw_vocab = self.vocab_edit.text().split(",")
-        vocab = [v.strip() for v in raw_vocab if v.strip()]
-        self.config.set("custom_vocabulary", vocab)
-
-        self.config.set("sound_effects", self.sound_check.isChecked())
-        self.config.set("restore_clipboard", self.restore_clip_check.isChecked())
-        self.config.set("terminal_paste_mode", self.terminal_paste_check.isChecked())
-
-        set_autostart(self.autostart_check.isChecked())
-
+        if not self.can_edit():
+            QMessageBox.warning(self, "Kayıt Devam Ediyor", "Ayarları değiştirmeden önce kayıt ve işleme tamamlanmalıdır.")
+            return
+        try:
+            aliases = parse_vocabulary_aliases(self.aliases_edit.toPlainText())
+        except ValueError as error:
+            QMessageBox.warning(self, "Yazım Eşleşmesi Geçersiz", str(error))
+            return
+        values = {
+            "provider": self.provider_combo.currentData(),
+            "gemini_api_key": self.gemini_key_edit.text().strip(),
+            "gemini_model": self.gemini_model_combo.currentText().strip(),
+            "groq_api_key": self.groq_key_edit.text().strip(),
+            "groq_stt_model": self.groq_stt_combo.currentData(),
+            "groq_llm_model": self.groq_llm_combo.currentData(),
+            "language": self.language_combo.currentData(),
+            "input_device_index": self.mic_combo.currentData(),
+            "vad_mode": self.vad_combo.currentData(),
+            "hotkey": self.hotkey_edit.get_hotkey(),
+            "trigger_mode": self.trigger_mode_combo.currentData(),
+            "custom_vocabulary": [v.strip() for v in self.vocab_edit.text().split(",") if v.strip()],
+            "vocabulary_aliases": aliases,
+            "sound_effects": self.sound_check.isChecked(),
+            "restore_clipboard": self.restore_clip_check.isChecked(),
+            "terminal_paste_mode": self.terminal_paste_check.isChecked(),
+        }
+        try:
+            self.config.update(values)
+        except (ValueError, RuntimeError) as error:
+            QMessageBox.warning(self, "Kaydedilemedi", str(error))
+            return
         self.config_updated.emit()
+        if not set_autostart(self.autostart_check.isChecked()):
+            QMessageBox.warning(self, "Başlangıç Ayarı", "Ayarlar kaydedildi, ancak otomatik başlatma değiştirilemedi.")
+            self.autostart_check.setChecked(is_autostart_enabled())
+            return
 
         # Görsel onay: pencereyi kapatmadan butonda "Kaydedildi" göster
         self.save_btn.setText("✓ Kaydedildi!")
         self.save_btn.setStyleSheet("background-color: #16a34a; color: #ffffff;")
-        QTimer.singleShot(1500, self._reset_save_btn)
+        self._save_timer.start(1500)
+
+    def _update_whisper_budget_hint(self) -> None:
+        try:
+            aliases = parse_vocabulary_aliases(self.aliases_edit.toPlainText())
+        except ValueError:
+            self.whisper_budget_label.setText("Yazım eşleşmesi biçimini düzeltin.")
+            return
+        vocab = [item.strip() for item in self.vocab_edit.text().split(",") if item.strip()]
+        _, omitted = build_whisper_prompt(vocab, aliases)
+        self.whisper_budget_label.setText(
+            f"Ses tanıma ipucu sınırı: 224 UTF-8 byte; sığmayan {omitted} terim kayıtta korunur."
+        )
 
     def _reset_save_btn(self) -> None:
         self.save_btn.setText("Kaydet")
         self.save_btn.setStyleSheet("")
 
     def _test_microphone(self) -> None:
+        if not self.can_edit():
+            QMessageBox.warning(self, "Kayıt Devam Ediyor", "Mikrofon testi için önce mevcut kaydı bitirin.")
+            return
         import pyaudio, struct, math
         dev_idx = self.mic_combo.currentData()
         self.test_mic_btn.setEnabled(False)
         self.mic_status_lbl.setText("Dinleniyor... Lütfen mikrofona konuşun...")
         self.mic_status_lbl.setStyleSheet("color: #60a5fa; font-size: 11px; font-weight: bold;")
         self.repaint()
-        from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()
 
-        p = pyaudio.PyAudio()
+        p = None
+        stream = None
         try:
+            p = pyaudio.PyAudio()
             stream_kwargs = {
                 "format": pyaudio.paInt16,
                 "channels": 1,
@@ -489,10 +556,6 @@ class SettingsDialog(QDialog):
                     rms = math.sqrt(sum_sq / len(shorts)) / 32768.0
                     if rms > max_rms:
                         max_rms = rms
-                QApplication.processEvents()
-            stream.stop_stream()
-            stream.close()
-
             if max_rms > 0.0008:
                 self.mic_status_lbl.setText(f"✓ Ses başarıyla algılandı! (Seviye: {max_rms:.4f})")
                 self.mic_status_lbl.setStyleSheet("color: #4ade80; font-size: 11px; font-weight: bold;")
@@ -503,12 +566,18 @@ class SettingsDialog(QDialog):
             self.mic_status_lbl.setText(f"Mikrofon açılamadı: {e}")
             self.mic_status_lbl.setStyleSheet("color: #f87171; font-size: 11px;")
         finally:
-            p.terminate()
+            if stream is not None:
+                with suppress(Exception):
+                    stream.close()
+            if p is not None:
+                with suppress(Exception):
+                    p.terminate()
             self.test_mic_btn.setEnabled(True)
 
     def _test_injection(self) -> None:
         from ..injector import TextInjector
-        injector = TextInjector()
+        injector = TextInjector(restore_clipboard=self.restore_clip_check.isChecked(),
+                                terminal_paste_mode=self.terminal_paste_check.isChecked())
         test_text = "🎉 Katip başarıyla metin enjekte ediyor!"
         success = injector.inject_text(test_text)
         if success:
@@ -531,5 +600,5 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Test Uyarısı",
-                f"Metin panoya kopyalandı ancak otomatik yapıştırma gönderilemedi.\n\n{help_text}"
+                f"Metin eklenemedi: {injector.last_error}\n\n{help_text}"
             )

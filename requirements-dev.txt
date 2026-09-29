@@ -1,0 +1,3 @@
+-r requirements.txt
+# ASVS 15.2.3: keep the test runner out of runtime dependencies.
+pytest>=8.0.0

@@ -22,8 +22,7 @@ git pull
 
 if [ -f ".venv/bin/activate" ]; then
     echo "📦 Bağımlılıklar güncelleniyor..."
-    .venv/bin/pip install -r requirements.txt -q
-    .venv/bin/pip install -e . --no-deps -q
+    .venv/bin/pip install -e . -q
     chmod +x bin/katip update.sh install.sh install.command update.command 2>/dev/null || true
     .venv/bin/python -m katip --install
 else

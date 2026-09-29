@@ -3,6 +3,8 @@ Unit tests for Desktop Integration, Autostart, and Single-Instance IPC.
 """
 
 import os
+import plistlib
+import socket
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -33,6 +35,21 @@ def test_project_root_resolution():
 def test_launcher_path_resolution():
     launcher = get_launcher_path()
     assert launcher.exists()
+    expected = get_project_root() / "bin" / ("katip.bat" if sys.platform.startswith("win") else "katip")
+    assert launcher == expected.resolve()
+
+def test_linux_icon_install_uses_asset_directory(tmp_path, monkeypatch):
+    from katip.desktop import _install_linux_icons
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    for filename in ("katip.svg", "katip-64.png", "katip-128.png", "katip-256.png"):
+        (assets / filename).write_bytes(b"icon")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    with patch("katip.desktop.get_assets_dir", return_value=assets), \
+         patch("katip.desktop.shutil.which", return_value=None):
+        _install_linux_icons()
+    assert (tmp_path / "data" / "icons" / "hicolor" / "scalable" / "apps" / "katip.svg").read_bytes() == b"icon"
+    assert (tmp_path / "data" / "icons" / "hicolor" / "256x256" / "apps" / "katip.png").read_bytes() == b"icon"
 
 def test_desktop_entry_content():
     content = _generate_desktop_entry_content()
@@ -42,6 +59,16 @@ def test_desktop_entry_content():
     assert "Exec=" in content
     assert "Keywords=" in content
     assert "dikte" in content
+
+def test_installed_assets_and_python_launcher(tmp_path):
+    from katip.desktop import get_assets_dir
+    wheel_assets = tmp_path / "share" / "katip" / "assets"
+    wheel_assets.mkdir(parents=True)
+    with patch("katip.desktop.get_project_root", return_value=tmp_path / "site-packages"), \
+         patch("katip.desktop.sys.prefix", str(tmp_path)), \
+         patch("katip.desktop.get_launcher_path", return_value=Path(sys.executable).resolve()):
+        assert get_assets_dir() == wheel_assets
+        assert f'Exec="{Path(sys.executable).resolve()}" -m katip %U' in _generate_desktop_entry_content()
 
 import sys
 
@@ -98,7 +125,8 @@ def test_single_instance_ipc(tmp_path):
     toggle_called = []
     notify_called = []
 
-    with patch("katip.hotkey.SOCKET_PATH", test_sock), patch("katip.hotkey.TCP_PORT", 59123):
+    with patch("katip.hotkey.SOCKET_PATH", test_sock), patch("katip.hotkey.TCP_PORT", 59123), \
+         patch("katip.hotkey.HAS_EVDEV", False), patch("katip.hotkey.HAS_PYNPUT", False):
         # Server not running yet
         assert not is_instance_running()
 
@@ -106,7 +134,7 @@ def test_single_instance_ipc(tmp_path):
             on_toggle=lambda: toggle_called.append(True),
             on_notify_running=lambda: notify_called.append(True)
         )
-        mgr.start()
+        assert mgr.start()
 
         # Wait for IPC thread to bind
         ready = False
@@ -131,7 +159,59 @@ def test_single_instance_ipc(tmp_path):
         finally:
             mgr.stop()
 
+def test_ipc_silent_client_and_duplicate_instance(tmp_path):
+    test_sock = str(tmp_path / "test-katip.sock")
+    with patch("katip.hotkey.SOCKET_PATH", test_sock), patch("katip.hotkey.TCP_PORT", 59124), \
+         patch("katip.hotkey.HAS_EVDEV", False), patch("katip.hotkey.HAS_PYNPUT", False):
+        first = HotkeyManager()
+        second = HotkeyManager()
+        assert first.start()
+        try:
+            assert not second.start()
+            family = socket.AF_INET if sys.platform.startswith("win") else socket.AF_UNIX
+            with socket.socket(family, socket.SOCK_STREAM) as silent:
+                silent.connect(("127.0.0.1", 59124) if family == socket.AF_INET else test_sock)
+                time.sleep(1.1)
+                assert send_ipc_message("ping") == "pong"
+        finally:
+            first.stop()
+        assert second.start()
+        try:
+            assert send_ipc_message("ping") == "pong"
+        finally:
+            second.stop()
+
+def test_windows_shortcut_quotes_paths(tmp_path):
+    from katip.desktop import _create_windows_shortcut
+    target = tmp_path / "O'Connor" / "katip.exe"
+    shortcut = tmp_path / "Katip.lnk"
+    with patch("katip.desktop.subprocess.run") as run:
+        run.return_value.returncode = 0
+        assert _create_windows_shortcut(target, shortcut)
+    command = run.call_args.args[0][-1]
+    assert "O''Connor" in command
+    assert not shortcut.exists()
+
+def test_mac_autostart_escapes_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    launcher = tmp_path / "A&B" / "katip"
+    plist_path = tmp_path / "LaunchAgents" / "katip.plist"
+    with patch("katip.desktop.get_launcher_path", return_value=launcher), \
+         patch("katip.desktop._get_mac_launch_agent_path", return_value=plist_path):
+        assert set_autostart(True)
+    assert plistlib.loads(plist_path.read_bytes())["ProgramArguments"] == [str(launcher)]
+
+def test_purge_reports_failed_cleanup(tmp_path):
+    from katip.desktop import purge_all
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    with patch("katip.desktop.uninstall_desktop_entry", return_value=True), \
+         patch("katip.desktop.set_autostart", return_value=False), \
+         patch("katip.config.get_config_dir", return_value=config_dir), \
+         patch("katip.desktop.shutil.rmtree", side_effect=OSError("locked")):
+        assert not purge_all()
+
 def test_detach_windows_console():
     from katip.desktop import detach_windows_console
-    # Should not throw any exception regardless of platform
-    detach_windows_console()
+    with patch("katip.desktop.sys.platform", "linux"):
+        detach_windows_console()

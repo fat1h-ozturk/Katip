@@ -7,27 +7,18 @@ import time
 from typing import List, Optional, Tuple
 import requests
 
-from ..prompts import build_system_prompt
+from ..config import DEFAULT_GEMINI_MODEL
+from ..prompts import build_system_prompt, clean_llm_output
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-_LLM_PREFIX_PATTERNS = [
-    "İşte metniniz:",
-    "İşte düzeltilmiş metin:",
-    "İşte düzenlenmiş metin:",
-    "Düzenlenmiş hali:",
-    "Düzeltilmiş hali:",
-    "Düzeltilmiş metin:",
-    "İşte:",
-]
-
 
 class GeminiService:
     """Service for processing audio into polished text using Gemini Multimodal models."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = DEFAULT_GEMINI_MODEL):
+        self.last_warning = ""
         self.api_key = api_key.strip() if api_key else ""
-        self.model = model or "gemini-2.0-flash"
+        self.model = model or DEFAULT_GEMINI_MODEL
         self._session = requests.Session()
 
     def transcribe_and_format(
@@ -40,6 +31,7 @@ class GeminiService:
         """
         Sends audio WAV bytes to Gemini and returns (formatted_text, latency_seconds).
         """
+        self.last_warning = ""
         if not self.api_key:
             raise ValueError(
                 "Gemini API anahtarı bulunamadı!\n"
@@ -50,7 +42,7 @@ class GeminiService:
         b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
         prompt = build_system_prompt(mode=mode, custom_vocabulary=custom_vocabulary)
 
-        url = f"{GEMINI_API_URL.format(model=self.model)}?key={self.api_key}"
+        url = GEMINI_API_URL.format(model=self.model)
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": self.api_key
@@ -80,51 +72,30 @@ class GeminiService:
             resp = self._session.post(url, json=payload, headers=headers, timeout=timeout)
         except requests.exceptions.Timeout:
             raise RuntimeError("Gemini API zaman aşımına uğradı (Timeout). Lütfen internet bağlantınızı kontrol edin.")
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Ağ bağlantı hatası: {e}")
+        except requests.exceptions.RequestException:
+            # ASVS 16.5.1: never expose request URLs or provider error bodies.
+            raise RuntimeError("Gemini bağlantı hatası. Lütfen tekrar deneyin.") from None
 
         latency = round(time.time() - start_time, 2)
 
         if resp.status_code != 200:
-            err_msg = f"HTTP {resp.status_code}"
-            try:
-                err_data = resp.json()
-                if "error" in err_data and "message" in err_data["error"]:
-                    err_msg = err_data["error"]["message"]
-            except Exception:
-                err_msg = resp.text[:200]
-            raise RuntimeError(f"Gemini API Hatası ({resp.status_code}): {err_msg}")
+            raise RuntimeError(f"Gemini API Hatası (HTTP {resp.status_code}). Lütfen ayarları kontrol edip tekrar deneyin.")
 
-        data = resp.json()
         try:
+            data = resp.json()
             candidates = data.get("candidates", [])
             if not candidates:
-                # Might have been blocked or silence
                 return ("", latency)
-
-            first_candidate = candidates[0]
-            parts = first_candidate.get("content", {}).get("parts", [])
-            if not parts:
-                return ("", latency)
-
-            text = parts[0].get("text", "").strip()
-
-            # Strip markdown code blocks if the model accidentally wrapped it
-            if text.startswith("```") and text.endswith("```"):
-                lines = text.splitlines()
-                if len(lines) >= 2:
-                    text = "\n".join(lines[1:-1]).strip()
-
-            # Strip leading/trailing quotation marks if whole text was quoted
-            if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
-                text = text[1:-1].strip()
-
-            # Strip conversational LLM prefixes
-            for prefix in _LLM_PREFIX_PATTERNS:
-                if text.startswith(prefix):
-                    text = text[len(prefix):].strip()
-                    break
-
-            return (text, latency)
-        except Exception as e:
-            raise RuntimeError(f"Gemini yanıtı ayrıştırılamadı: {e}")
+            candidate = candidates[0]
+            # ASVS 2.2.1: validate completion before accepting any text for injection.
+            if candidate.get("finishReason") != "STOP":
+                raise RuntimeError("Gemini yanıtı tamamlanamadı. Ses kaydı korunuyor; tekrar deneyin.")
+            parts = candidate.get("content", {}).get("parts", [])
+            texts = [part["text"] for part in parts if not part.get("thought") and "text" in part]
+            if any(not isinstance(text, str) for text in texts):
+                raise ValueError("invalid text")
+            return (clean_llm_output("".join(texts)), latency)
+        except RuntimeError:
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+            raise RuntimeError("Gemini yanıtı ayrıştırılamadı.") from None

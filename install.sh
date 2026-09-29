@@ -14,11 +14,15 @@ echo "======================================================"
 
 # 1. Check Python 3
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Hata: python3 bulunamadı. Lütfen Python 3.9 veya üstünü yükleyin."
+    echo "❌ Hata: python3 bulunamadı. Lütfen Python 3.10 veya üstünü yükleyin."
     exit 1
 fi
 
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    echo "❌ Hata: Python 3.10 veya üstü gerekli."
+    exit 1
+fi
 echo "✓ Python $PYTHON_VERSION algılandı."
 
 # 2. Setup Virtual Environment
@@ -32,8 +36,7 @@ fi
 # 3. Install Python Dependencies
 echo "📦 Bağımlılıklar yükleniyor/güncelleniyor..."
 .venv/bin/pip install --upgrade pip -q
-.venv/bin/pip install -r requirements.txt -q
-.venv/bin/pip install -e . --no-deps -q
+.venv/bin/pip install -e . -q
 
 # 4. Make launcher and lifecycle scripts executable
 chmod +x bin/katip update.sh install.sh uninstall.sh install.command update.command uninstall.command 2>/dev/null || true

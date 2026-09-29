@@ -48,10 +48,6 @@ for _i in range(1, 25):
     if _key:
         _SPECIAL_KEY_MAP[_key] = f"F{_i}"
 
-# Escape, Backspace, Delete → özel kontrol tuşları (yakalama için kullanılmaz)
-_CONTROL_KEYS = {Qt.Key.Key_Escape, Qt.Key.Key_Backspace, Qt.Key.Key_Delete}
-
-
 class HotkeyRecorderWidget(QLineEdit):
     """
     Kullanıcı bu widget'a tıkladığında kayıt moduna girer.

@@ -1,4 +1,5 @@
 @echo off
+setlocal
 chcp 65001 >nul 2>&1
 REM ==============================================================================
 REM Katip: Windows Kaldirici (Uninstaller)
@@ -32,6 +33,7 @@ taskkill /f /im pythonw.exe /fi "WINDOWTITLE eq Katip*" >nul 2>&1
 echo [2/4] Sistem entegrasyonu ve ayarlar temizleniyor...
 if exist ".venv\Scripts\python.exe" (
     call .venv\Scripts\python.exe -m katip --purge >nul 2>&1
+    if errorlevel 1 set "PURGE_FAILED=1"
 )
 
 REM Kisayollari ve ayarlari manuel olarak da garantiye al
@@ -45,6 +47,19 @@ if defined APPDATA (
     if exist "%APPDATA%\katip" (
         rmdir /s /q "%APPDATA%\katip" >nul 2>&1
     )
+    if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Katip.lnk" set "PURGE_FAILED=1"
+    if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Katip.lnk" set "PURGE_FAILED=1"
+    if exist "%APPDATA%\katip" set "PURGE_FAILED=1"
+)
+if defined USERPROFILE if exist "%USERPROFILE%\Desktop\Katip.lnk" (
+    del /f /q "%USERPROFILE%\Desktop\Katip.lnk" >nul 2>&1
+    if exist "%USERPROFILE%\Desktop\Katip.lnk" set "PURGE_FAILED=1"
+)
+
+if defined PURGE_FAILED (
+    echo [HATA] Sistem entegrasyonu veya ayarlar tamamen temizlenemedi.
+    pause
+    exit /b 1
 )
 
 echo [3/4] Sanal ortam ve derleme artıklari siliniyor...
@@ -53,6 +68,12 @@ if exist ".pytest_cache" rmdir /s /q ".pytest_cache" >nul 2>&1
 if exist "katip.egg-info" rmdir /s /q "katip.egg-info" >nul 2>&1
 if exist "build" rmdir /s /q "build" >nul 2>&1
 if exist "dist" rmdir /s /q "dist" >nul 2>&1
+
+if exist ".venv" (
+    echo [HATA] Sanal ortam silinemedi.
+    pause
+    exit /b 1
+)
 
 echo [4/4] Sistem temizligi tamamlandi!
 echo.

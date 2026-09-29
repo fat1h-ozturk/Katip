@@ -2,7 +2,7 @@
 
 **Katip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
 
-Mikrofonunuzdan konuşmanızı dinler; konuşma dili dolgularını ("ııı", "şey", "yani", "falan") ve dilbilgisi hatalarını anında temizler. Aktif olan herhangi bir pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları, terminal vb.) imleç odağını kaybetmeden doğrudan yazar.
+Mikrofonunuzdan konuşmanızı dinler; anlamı koruyarak gereksiz konuşma dolgularını ve dilbilgisi hatalarını düzenlemeyi hedefler. Aktif pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları vb.) doğrudan yazar.
 
 ## İndir
 
@@ -12,7 +12,7 @@ Mikrofonunuzdan konuşmanızı dinler; konuşma dili dolgularını ("ııı", "�
 | macOS (Apple Silicon) | [Katip macOS ARM64 imajını indir](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-arm64.dmg) |
 | macOS (Intel) | [Katip macOS Intel imajını indir](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-x64.dmg) |
 
-macOS'ta DMG'yi açıp Katip'i Applications klasörüne sürükleyin. Uygulama Apple tarafından imzalanıp notarize edilmediğinden macOS ilk açılışta ayrıca onay isteyebilir. İndirme bağlantıları ilk GitHub Release oluşturulduğunda etkinleşir.
+macOS'ta DMG'yi açıp Katip'i Applications klasörüne sürükleyin. Uygulama Apple tarafından imzalanıp notarize edilmediğinden macOS ilk açılışta ayrıca onay isteyebilir.
 
 ---
 
@@ -23,10 +23,10 @@ macOS'ta DMG'yi açıp Katip'i Applications klasörüne sürükleyin. Uygulama A
 - **Odak Kaybetmeyen Yüzen Kapsül (Floating Pill):** Ekranın üstünde beliren, ses dalgası animasyonlu modern arayüz. Yazdığınız pencerenin **imleç odağını asla bozmaz**.
 - **Otomatik Ses Normalizasyonu (Volume Boost):** Kısık sesli veya laptop mikrofonlarını otomatik olarak analiz eder ve en ideal seviyeye yükselterek yapay zekaya iletir.
 - **Yapay Zeka Destekli Düzenleme:**
-  - **Groq Cloud (Önerilen - Ultra Hızlı):** Whisper Large v3 Turbo (~200ms) + Llama/Qwen ile anında metin dökümü ve biçimlendirme.
-  - **Google Gemini 2.0 Flash:** Çok modlu (multimodal) ses anlama ve doğrudan dikte.
+  - **Groq Cloud:** Ses dökümü ve metin düzenleme.
+  - **Google Gemini:** Çok modlu (multimodal) ses anlama ve doğrudan dikte.
 - **5 Farklı Yazma Modu (Personas):**
-  - ✍️ **Doğal Dikte (Varsayılan):** Anlamı birebir korur, dolguları atar, yazım ve noktalamayı düzeltir.
+  - ✍️ **Doğal Dikte (Varsayılan):** Özetlemeden yazım ve noktalamayı düzenler; anlamlı dolguları, vurguları ve belirsizliği koruması istenir.
   - 💬 **Hızlı Mesajlaşma (Chat):** Slack, WhatsApp ve Discord için samimi, akıcı ve dolaysız mesaj dili.
   - ✉️ **Resmi E-Posta:** Kurumsal, nazik ve paragraflara ayrılmış e-posta metni.
   - 🤖 **AI Prompt Oluşturucu:** Dağınık sesli düşünceleri yapılandırılmış LLM istemine çevirir.
@@ -79,7 +79,6 @@ cd katip
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e .
 python -m katip --install
 ```
 
@@ -136,7 +135,7 @@ Projeye yeni bir özellik veya doğruluk iyileştirmesi geldiğinde:
 
 **`update.bat` arka planda ne yapar?**
 1. GitHub deposundan en güncel değişiklikleri çeker (`git pull`).
-2. `.venv` ortamına yeni bir paket gereksinimi eklendiyse otomatik yükler (`pip install -r requirements.txt`).
+2. `.venv` ortamına proje bağımlılıklarını yükler (`pip install -e .`).
 3. Windows Başlat Menüsü ve masaüstü bağlantılarını yeniler.
 4. Başarı bildirimini ekranda gösterir.
 
@@ -216,7 +215,7 @@ Uygulamayı, `.app` paketini, Spotlight kaydını, LaunchAgent ve ayarları temi
 
 1. **API Anahtarını Girin:**
    - Uygulama açıldığında sağ alt (veya macOS'ta üst menü çubuğundaki) sistem çekmecesi ikonuna **sağ tıklayın** ve **⚙️ Ayarlar...** seçeneğini açın.
-   - **Groq Cloud** (Önerilen, [console.groq.com](https://console.groq.com) üzerinden ücretsiz) veya **Google Gemini** API anahtarınızı girip **Kaydet**'e basın.
+   - **Groq Cloud** veya **Google Gemini** API anahtarınızı girip **Kaydet**'e basın. Model erişimi ve ücretlendirme için sağlayıcınızın güncel koşullarını kontrol edin.
    *(İsteğe bağlı olarak terminalinizde `export GROQ_API_KEY="gsk_..."` veya Windows'ta `set GROQ_API_KEY=...` tanımlayabilirsiniz).*
 
 2. **Dikteyi Başlatın:**
@@ -225,7 +224,32 @@ Uygulamayı, `.app` paketini, Spotlight kaydını, LaunchAgent ve ayarları temi
    - Ekranın üstünde şık bir kapsül belirecek ve siz konuştukça dinleyecektir (yazı imleciniz kaybolmaz).
 3. **Dikteyi Bitirin:**
    - Konuşmanız bittiğinde tekrar **`Ctrl + Alt + Space`** tuşlarına basın.
-   - 1 saniye içinde filtrelenmiş, dilbilgisi düzeltilmiş metin doğrudan imlecin olduğu yere yapıştırılacaktır!
+   - İşleme tamamlandığında düzenlenmiş metin imlecin olduğu yere yapıştırılır.
+
+İşleme veya yapıştırma başarısız olursa sistem çekmecesindeki **Son Sonuç / Kaydı Kurtar...** menüsünü açın. Buradan son metni kopyalayabilir, kaydı yeniden işleyebilir veya sesi WAV dosyası olarak kaydedebilirsiniz. Yeniden işleme sonucu bu pencerede gösterilir; otomatik yapıştırılmaz. İşlenemeyen ses uygulama açıkken bellekte tutulur; yeniden kayda başlamadan veya çıkmadan önce **Sesi Kaydet** ya da **Kaydı Temizle** seçeneğini kullanın.
+
+Korunan bir kayıt varken kısayola yeniden bastığınızda kurtarma penceresi açılır. Metin modeli bulunamıyorsa hata mesajında HTTP 404 ve ayarları düzeltme yönlendirmesi gösterilir; model kendiliğinden değiştirilmez.
+
+### Groq: sözlük ve metin düzenleme
+
+Ayarlardaki özel kelime listesine tercih ettiğiniz yazımları ekleyebilirsiniz. İsteğe bağlı eşleşme alanında her satır `duyulan varyant => tercih edilen yazım` biçimindedir:
+
+```text
+paysayd altı => PySide6
+katıp => Katip
+```
+
+Eşleşmeler bağlama bağlı yazım ipuçlarıdır; metne körlemesine arama/değiştirme uygulanmaz. En fazla 100 eşleşme, her taraf için 200 karakter kabul edilir. Whisper'a gönderilen ipucu 224 UTF-8 byte ile sınırlanır; bu gerçek token sayımı değildir. Sığmayan terimler ayarlarda bildirilir ve kayıtlı sözlükten silinmez.
+
+Groq akışı seçili modellerle bir ses dökümü ve bir metin düzenleme isteği kullanır. Modlara özel talimatlar isimleri, miktarları, olumsuzlukları ve ihtimal ifadelerini korumayı hedefler. Düzenleyici yanıtının JSON yapısı ve tamamlanması kontrol edilir; bozuk veya kesilmiş yanıtta ham metin korunur, otomatik yapıştırma yapılmaz. Uzun girdide çıktı bütçesi artırılır; bağlama sığmayan ham metin sessizce kırpılmaz.
+
+**Son Sonuç** ekranında **Ham Metin** ve **Düzenlenmiş Metin** sekmeleri ayrı ayrı kopyalanabilir:
+
+- **Metni Yeniden Düzenle:** Her seferinde özgün ham transkripti kullanır; ses göndermez, yalnız bir metin isteği yapar ve otomatik yapıştırmaz. Varsayılan olarak kaydın modunu ve sözlüğünü korur. **Güncel mod ve sözlüğü kullan** seçeneği bu ikisini günceller; kaydın model ve dil seçimi korunur. Başarısızlıkta önceki başarılı sonuç kaybolmaz.
+- **Sesi Yeniden İşle:** Bellekteki sesi mevcut ayarlarla yeniden gönderir. Ses dökümü ve metin düzenleme aşamalarını tekrar çalıştırır.
+- **Ayrıntılar:** Sözlük sınırlarını, mevcut segment verilerini ve belirgin URL/e-posta/kod/kimlik farklarını gösterir. Bunlar doğruluk yüzdesi veya anlam hatası kararı değildir; sonucu engellemez.
+
+Ham ve düzenlenmiş metin yalnız bellekte tutulur; yeni kayıt, **Kaydı Temizle** veya uygulamanın kapanmasıyla silinir. Kalıcı transkript geçmişi eklenmez. Bu kontroller modelin anlamı kusursuz koruyacağını garanti etmez; Gemini'nin mevcut metin akışı korunur.
 
 ---
 
@@ -244,6 +268,7 @@ Her işletim sisteminde `katip --toggle` komutu çalışır durumda olan uygulam
 Tüm platform adaptörlerini ve birim testleri doğrulamak için:
 
 ```bash
-pytest -v
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
 ```
 

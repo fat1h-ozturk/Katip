@@ -3,11 +3,18 @@ Unit tests for accuracy improvements, VAD trimming, and LLM output cleaning.
 """
 
 import math
+import pytest
 import struct
 from unittest.mock import MagicMock, patch
 from katip.prompts import build_system_prompt
-from katip.services.groq import _clean_llm_output, GroqService
+from katip.services.groq import GroqService
+from katip.prompts import clean_llm_output as _clean_llm_output
 from katip.audio import AudioRecorder
+
+
+@pytest.fixture(autouse=True)
+def no_microphone(monkeypatch):
+    monkeypatch.setattr("katip.audio.pyaudio.PyAudio", MagicMock())
 
 
 def test_silence_instruction_in_prompts():
@@ -57,14 +64,14 @@ def test_groq_payload_reasoning_and_language():
         mock_llm_resp = MagicMock()
         mock_llm_resp.status_code = 200
         mock_llm_resp.json.return_value = {
-            "choices": [{"message": {"content": "<think>...</think>Deneme ses."}}]
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"text":"Deneme ses."}'}}]
         }
 
         mock_post.side_effect = [mock_stt_resp, mock_llm_resp]
 
         # Case 1: language="auto" -> language should NOT be in STT payload
-        text, latency = service.transcribe_and_format(b"fake_wav", language="auto")
-        assert text == "Deneme ses."
+        result = service.transcribe_and_format(b"fake_wav", language="auto")
+        assert result.formatted_text == "Deneme ses."
 
         stt_call = mock_post.call_args_list[0]
         stt_data = stt_call.kwargs["data"]
@@ -80,7 +87,7 @@ def test_groq_payload_explicit_language():
     service = GroqService(api_key="fake_key")
     with patch.object(service._session, "post") as mock_post:
         mock_stt = MagicMock(status_code=200, json=lambda: {"text": "test"})
-        mock_llm = MagicMock(status_code=200, json=lambda: {"choices": [{"message": {"content": "Test."}}]})
+        mock_llm = MagicMock(status_code=200, json=lambda: {"choices": [{"finish_reason": "stop", "message": {"content": '{"text":"Test."}'}}]})
         mock_post.side_effect = [mock_stt, mock_llm]
 
         service.transcribe_and_format(b"fake_wav", language="tr")
@@ -107,7 +114,9 @@ def test_audio_vad_speech_preservation():
     trail_silence = b"\x00" * (960 * 10)  # 300ms silence
     raw_pcm = lead_silence + bytes(speech) + trail_silence
 
-    trimmed = recorder._trim_silence_vad(raw_pcm)
+    recorder._vad = MagicMock()
+    recorder._vad.is_speech.side_effect = lambda frame, rate: any(frame)
+    trimmed = recorder._process_dsp(raw_pcm)
     assert len(trimmed) > 0
     # Trimmed audio should preserve speech and be shorter than full padded audio
     assert len(trimmed) <= len(raw_pcm)

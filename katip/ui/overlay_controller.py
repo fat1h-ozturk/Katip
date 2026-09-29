@@ -6,6 +6,7 @@ Launches and communicates with the GTK4 layer shell overlay process.
 import os
 import subprocess
 import sys
+from ctypes.util import find_library
 from typing import Optional
 
 class LayerOverlayController:
@@ -19,8 +20,8 @@ class LayerOverlayController:
     def _start_overlay(self) -> None:
         """Starts the GTK4 layer shell overlay process."""
         env = dict(os.environ)
-        layer_so = "/usr/lib64/libgtk4-layer-shell.so.0"
-        if os.path.exists(layer_so):
+        layer_so = find_library("gtk4-layer-shell")
+        if layer_so:
             cur_preload = env.get("LD_PRELOAD", "")
             env["LD_PRELOAD"] = f"{layer_so}:{cur_preload}" if cur_preload else layer_so
 
@@ -61,7 +62,7 @@ class LayerOverlayController:
         self._send_cmd(f"SUCCESS {latency}")
 
     def show_error(self, message: str) -> None:
-        self._send_cmd(f"ERROR {message}")
+        self._send_cmd(f"ERROR {' '.join(message.splitlines())}")
 
     def hide_pill(self) -> None:
         self._send_cmd("HIDE")

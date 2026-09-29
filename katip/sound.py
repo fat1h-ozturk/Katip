@@ -22,7 +22,6 @@ class SoundPlayer:
         self._cache: Dict[str, bytes] = {}
         self._has_pw_play = sys.platform.startswith("linux") and (shutil.which("pw-play") is not None)
         self._has_aplay = sys.platform.startswith("linux") and (shutil.which("aplay") is not None)
-        self._has_afplay = sys.platform == "darwin" and (shutil.which("afplay") is not None)
         self._init_sounds()
 
     def _init_sounds(self) -> None:

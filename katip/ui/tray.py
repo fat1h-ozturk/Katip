@@ -2,8 +2,7 @@
 System Tray Icon and context menu for Katip.
 """
 
-from typing import Callable, Optional
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
@@ -13,6 +12,7 @@ class TrayIcon(QSystemTrayIcon):
     mode_changed = Signal(str)
     toggle_requested = Signal()
     settings_requested = Signal()
+    result_requested = Signal()
     quit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -128,6 +128,10 @@ class TrayIcon(QSystemTrayIcon):
         self.settings_action = QAction("⚙️ Ayarlar...", self)
         self.settings_action.triggered.connect(self.settings_requested.emit)
         self.menu.addAction(self.settings_action)
+
+        result_action = QAction("Son Sonuç / Kaydı Kurtar...", self)
+        result_action.triggered.connect(self.result_requested.emit)
+        self.menu.addAction(result_action)
 
         # Quit action
         self.quit_action = QAction("❌ Çıkış", self)
