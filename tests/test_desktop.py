@@ -7,7 +7,10 @@ import plistlib
 import socket
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
+import pytest
 
 from katip.desktop import (
     _generate_desktop_entry_content,
@@ -120,8 +123,15 @@ def test_autostart_toggle_windows(tmp_path, monkeypatch):
         assert not (fake_startup / "Katip.lnk").exists()
         assert not is_autostart_enabled()
 
-def test_single_instance_ipc(tmp_path):
-    test_sock = str(tmp_path / "test-katip.sock")
+@pytest.fixture
+def ipc_socket_path():
+    # macOS AF_UNIX paths cannot fit pytest's long per-test temporary directory.
+    with TemporaryDirectory(prefix="katip-ipc-", dir="/tmp" if os.name == "posix" else None) as directory:
+        yield str(Path(directory) / "ipc.sock")
+
+
+def test_single_instance_ipc(ipc_socket_path):
+    test_sock = ipc_socket_path
     toggle_called = []
     notify_called = []
 
@@ -159,8 +169,8 @@ def test_single_instance_ipc(tmp_path):
         finally:
             mgr.stop()
 
-def test_ipc_silent_client_and_duplicate_instance(tmp_path):
-    test_sock = str(tmp_path / "test-katip.sock")
+def test_ipc_silent_client_and_duplicate_instance(ipc_socket_path):
+    test_sock = ipc_socket_path
     with patch("katip.hotkey.SOCKET_PATH", test_sock), patch("katip.hotkey.TCP_PORT", 59124), \
          patch("katip.hotkey.HAS_EVDEV", False), patch("katip.hotkey.HAS_PYNPUT", False):
         first = HotkeyManager()
