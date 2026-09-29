@@ -124,7 +124,9 @@ def test_autostart_toggle_windows(tmp_path, monkeypatch):
         assert not is_autostart_enabled()
 
 @pytest.fixture
-def ipc_socket_path():
+def ipc_socket_path(monkeypatch):
+    # These tests exercise IPC only, never the host's global keyboard listener.
+    monkeypatch.setattr(HotkeyManager, "_start_macos_listener", lambda self: None)
     # macOS AF_UNIX paths cannot fit pytest's long per-test temporary directory.
     with TemporaryDirectory(prefix="katip-ipc-", dir="/tmp" if os.name == "posix" else None) as directory:
         yield str(Path(directory) / "ipc.sock")
