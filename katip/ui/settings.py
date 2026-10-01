@@ -217,8 +217,8 @@ class SettingsDialog(QDialog):
         self.agy_llm_label = QLabel("Antigravity Modeli:")
         ai_layout.addRow(self.agy_llm_label, self.agy_llm_combo)
 
-        # STT Note for Claude and Codex
-        self.stt_note_label = QLabel("Not: Bu sağlayıcı için ses çevirisinde Groq veya OpenAI anahtarı gereklidir.")
+        # STT Note for Claude, Codex, Antigravity
+        self.stt_note_label = QLabel("Not: Ses tanıma (STT) için ücretsiz Groq Whisper anahtarı kullanılır.")
         self.stt_note_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         ai_layout.addRow("", self.stt_note_label)
 
@@ -392,9 +392,9 @@ class SettingsDialog(QDialog):
         self.groq_llm_label.setVisible(is_groq)
         self.groq_llm_combo.setVisible(is_groq)
         
-        # OpenAI (show STT models for OpenAI, show keys if needs_stt_key)
-        self.openai_key_label.setVisible(is_openai or needs_stt_key)
-        self.openai_key_edit.setVisible(is_openai or needs_stt_key)
+        # OpenAI (only show when OpenAI is the selected provider)
+        self.openai_key_label.setVisible(is_openai)
+        self.openai_key_edit.setVisible(is_openai)
         self.openai_stt_label.setVisible(is_openai)
         self.openai_stt_combo.setVisible(is_openai)
         self.openai_llm_label.setVisible(is_openai)
