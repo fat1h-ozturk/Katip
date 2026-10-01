@@ -281,9 +281,10 @@ class SettingsDialog(QDialog):
         self.agy_llm_combo = QComboBox()
         self.agy_llm_combo.setEditable(True)
         self.agy_llm_combo.addItem("Varsayılan (Antigravity Ayarları)", "")
-        self.agy_llm_combo.addItem("pro", "pro")
-        self.agy_llm_combo.addItem("flash", "flash")
-        self.agy_llm_combo.addItem("flash_lite", "flash_lite")
+        self.agy_llm_combo.addItem("Gemini 3.8 Flash (High)", "gemini-3.8-flash-high")
+        self.agy_llm_combo.addItem("Gemini 3.8 Flash (Medium)", "gemini-3.8-flash-medium")
+        self.agy_llm_combo.addItem("Gemini 3.8 Flash (Low)", "gemini-3.8-flash-low")
+        self.agy_llm_combo.addItem("Gemini 3.1 Pro (High)", "gemini-3.1-pro-high")
         self.agy_llm_label = QLabel("Antigravity Modeli:")
         ai_layout.addRow(self.agy_llm_label, self.agy_llm_combo)
 
@@ -542,10 +543,16 @@ class SettingsDialog(QDialog):
         self.openai_llm_combo.setCurrentText(self.config.get("openai_llm_model", "gpt-4o-mini"))
         
         self.anthropic_key_edit.setText(self.config.get("anthropic_api_key", ""))
-        self.claude_llm_combo.setCurrentText(self.config.get("claude_llm_model", "claude-5-sonnet"))
-        
-        self.codex_llm_combo.setCurrentText(self.config.get("codex_model", ""))
-        self.agy_llm_combo.setCurrentText(self.config.get("agy_model", ""))
+        def _set_combo(combo: QComboBox, value: str):
+            idx = combo.findData(value)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            else:
+                combo.setCurrentText(value)
+                
+        _set_combo(self.claude_llm_combo, self.config.get("claude_llm_model", "claude-5-sonnet"))
+        _set_combo(self.codex_llm_combo, self.config.get("codex_model", ""))
+        _set_combo(self.agy_llm_combo, self.config.get("agy_model", ""))
 
         lang = self.config.get("language", "auto")
         lang_idx = self.language_combo.findData(lang)
@@ -605,9 +612,9 @@ class SettingsDialog(QDialog):
             "openai_stt_model": self.openai_stt_combo.currentData(),
             "openai_llm_model": self.openai_llm_combo.currentText().strip(),
             "anthropic_api_key": self.anthropic_key_edit.text().strip(),
-            "claude_llm_model": self.claude_llm_combo.currentText().strip(),
-            "codex_model": self.codex_llm_combo.currentText().strip(),
-            "agy_model": self.agy_llm_combo.currentText().strip(),
+            "claude_llm_model": self.claude_llm_combo.currentData() or self.claude_llm_combo.currentText().strip(),
+            "codex_model": self.codex_llm_combo.currentData() or self.codex_llm_combo.currentText().strip(),
+            "agy_model": self.agy_llm_combo.currentData() or self.agy_llm_combo.currentText().strip(),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
             "vad_mode": self.vad_combo.currentData(),
