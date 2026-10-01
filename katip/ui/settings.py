@@ -178,6 +178,7 @@ class SettingsDialog(QDialog):
         self.provider_combo.addItem("Groq Cloud (Whisper + Llama 3)", "groq")
         self.provider_combo.addItem("ChatGPT (OpenAI)", "openai")
         self.provider_combo.addItem("Claude (Anthropic)", "claude")
+        self.provider_combo.addItem("Codex Desktop (Yerel Uygulama)", "codex")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         ai_layout.addRow("Sağlayıcı:", self.provider_combo)
 
@@ -264,10 +265,21 @@ class SettingsDialog(QDialog):
         self.claude_llm_label = QLabel("Claude LLM Modeli:")
         ai_layout.addRow(self.claude_llm_label, self.claude_llm_combo)
 
-        # Claude Note
-        self.claude_note_label = QLabel("Not: Claude için ses çevirisinde Groq veya OpenAI anahtarı gereklidir.")
-        self.claude_note_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        ai_layout.addRow("", self.claude_note_label)
+        # Codex Model
+        self.codex_llm_combo = QComboBox()
+        self.codex_llm_combo.setEditable(True)
+        self.codex_llm_combo.addItem("Varsayılan (Codex Ayarları)", "")
+        self.codex_llm_combo.addItem("gpt-5.6-luna", "gpt-5.6-luna")
+        self.codex_llm_combo.addItem("gpt-5.5", "gpt-5.5")
+        self.codex_llm_combo.addItem("gpt-5.4", "gpt-5.4")
+        self.codex_llm_combo.addItem("gpt-5-mini", "gpt-5-mini")
+        self.codex_llm_label = QLabel("Codex LLM Modeli:")
+        ai_layout.addRow(self.codex_llm_label, self.codex_llm_combo)
+
+        # STT Note for Claude and Codex
+        self.stt_note_label = QLabel("Not: Bu sağlayıcı için ses çevirisinde Groq veya OpenAI anahtarı gereklidir.")
+        self.stt_note_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        ai_layout.addRow("", self.stt_note_label)
 
         # Language selection
         self.language_combo = QComboBox()
@@ -415,6 +427,9 @@ class SettingsDialog(QDialog):
         is_groq = provider == "groq"
         is_openai = provider == "openai"
         is_claude = provider == "claude"
+        is_codex = provider == "codex"
+        
+        needs_stt_key = is_claude or is_codex
 
         # Gemini
         self.gemini_key_label.setVisible(is_gemini)
@@ -423,17 +438,17 @@ class SettingsDialog(QDialog):
         self.gemini_model_label.setVisible(is_gemini)
         self.gemini_model_combo.setVisible(is_gemini)
 
-        # Groq (show STT models for Groq or Claude, since Claude relies on Groq/OpenAI for STT)
-        self.groq_key_label.setVisible(is_groq or is_claude)
-        self.groq_key_edit.setVisible(is_groq or is_claude)
+        # Groq (show STT models for Groq, show keys if needs_stt_key)
+        self.groq_key_label.setVisible(is_groq or needs_stt_key)
+        self.groq_key_edit.setVisible(is_groq or needs_stt_key)
         self.groq_stt_label.setVisible(is_groq)
         self.groq_stt_combo.setVisible(is_groq)
         self.groq_llm_label.setVisible(is_groq)
         self.groq_llm_combo.setVisible(is_groq)
         
-        # OpenAI
-        self.openai_key_label.setVisible(is_openai or is_claude)
-        self.openai_key_edit.setVisible(is_openai or is_claude)
+        # OpenAI (show STT models for OpenAI, show keys if needs_stt_key)
+        self.openai_key_label.setVisible(is_openai or needs_stt_key)
+        self.openai_key_edit.setVisible(is_openai or needs_stt_key)
         self.openai_stt_label.setVisible(is_openai)
         self.openai_stt_combo.setVisible(is_openai)
         self.openai_llm_label.setVisible(is_openai)
@@ -444,7 +459,13 @@ class SettingsDialog(QDialog):
         self.anthropic_key_edit.setVisible(is_claude)
         self.claude_llm_label.setVisible(is_claude)
         self.claude_llm_combo.setVisible(is_claude)
-        self.claude_note_label.setVisible(is_claude)
+        
+        # Codex
+        self.codex_llm_label.setVisible(is_codex)
+        self.codex_llm_combo.setVisible(is_codex)
+        
+        # Note
+        self.stt_note_label.setVisible(needs_stt_key)
 
     def _toggle_key_visibility(self) -> None:
         if self.gemini_key_edit.echoMode() == QLineEdit.EchoMode.Password:
@@ -505,7 +526,9 @@ class SettingsDialog(QDialog):
         self.openai_llm_combo.setCurrentText(self.config.get("openai_llm_model", "gpt-4o-mini"))
         
         self.anthropic_key_edit.setText(self.config.get("anthropic_api_key", ""))
-        self.claude_llm_combo.setCurrentText(self.config.get("claude_llm_model", "claude-3-5-sonnet-20241022"))
+        self.claude_llm_combo.setCurrentText(self.config.get("claude_llm_model", "claude-5-sonnet"))
+        
+        self.codex_llm_combo.setCurrentText(self.config.get("codex_model", ""))
 
         lang = self.config.get("language", "auto")
         lang_idx = self.language_combo.findData(lang)
@@ -566,6 +589,7 @@ class SettingsDialog(QDialog):
             "openai_llm_model": self.openai_llm_combo.currentText().strip(),
             "anthropic_api_key": self.anthropic_key_edit.text().strip(),
             "claude_llm_model": self.claude_llm_combo.currentText().strip(),
+            "codex_model": self.codex_llm_combo.currentText().strip(),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
             "vad_mode": self.vad_combo.currentData(),

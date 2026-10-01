@@ -40,6 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "openai_llm_model": "gpt-5-mini",
     "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
     "claude_llm_model": "claude-5-sonnet",
+    "codex_model": "",
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
     "trigger_mode": "toggle",  # "toggle" or "push_to_talk"
@@ -81,7 +82,7 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(values, dict):
         raise ValueError("Ayarlar bir JSON nesnesi olmalıdır.")
     choices = {
-        "provider": ("gemini", "groq", "openai", "claude"),
+        "provider": ("gemini", "groq", "openai", "claude", "codex"),
         "mode": ("dictation", "chat", "email", "prompt", "bullets"),
         "trigger_mode": ("toggle", "push_to_talk"),
         "language": ("auto", "tr", "en"),

@@ -20,6 +20,7 @@ from .services.gemini import GeminiService
 from .services.groq import GroqResult, GroqService
 from .services.openai import OpenAIService
 from .services.claude import ClaudeService
+from .services.codex import CodexService
 from .sound import SoundPlayer
 from .ui.overlay_controller import LayerOverlayController
 from .ui.pill import FloatingPill
@@ -121,6 +122,7 @@ class KatipApp:
         self._groq_service: Optional[GroqService] = None
         self._openai_service: Optional[OpenAIService] = None
         self._claude_service: Optional[ClaudeService] = None
+        self._codex_service: Optional[CodexService] = None
 
         # Guide user: if API key is not configured yet, open Settings on first run
         if not self.config.get_api_key():
@@ -194,6 +196,33 @@ class KatipApp:
             self._claude_service = ClaudeService(api_key=api_key, llm_model=llm_model,
                                                  stt_provider=stt_provider, stt_api_key=stt_api_key, stt_model=stt_model)
         return self._claude_service
+
+    def _get_codex_service(self) -> CodexService:
+        codex_model = self.config.get("codex_model", "")
+        
+        groq_key = self.config.get("groq_api_key", "")
+        openai_key = self.config.get("openai_api_key", "")
+        
+        if groq_key:
+            stt_provider = "groq"
+            stt_api_key = groq_key
+            stt_model = self.config.get("groq_stt_model", "whisper-large-v3-turbo")
+        elif openai_key:
+            stt_provider = "openai"
+            stt_api_key = openai_key
+            stt_model = self.config.get("openai_stt_model", "whisper-1")
+        else:
+            stt_provider = ""
+            stt_api_key = ""
+            stt_model = ""
+
+        if self._codex_service is None or \
+           self._codex_service.codex_model != codex_model or \
+           self._codex_service.stt_provider != stt_provider or \
+           self._codex_service.stt_api_key != stt_api_key.strip():
+            self._codex_service = CodexService(codex_model=codex_model,
+                                               stt_provider=stt_provider, stt_api_key=stt_api_key, stt_model=stt_model)
+        return self._codex_service
 
     def start_recording(self) -> None:
         """Starts audio recording if not already recording or busy."""
@@ -301,6 +330,14 @@ class KatipApp:
             elif provider == "claude":
                 lang = self.config.get("language", "tr")
                 service = self._get_claude_service()
+                result = service.transcribe_and_format(
+                    audio_bytes, mode=mode, custom_vocabulary=custom_vocab, language=lang,
+                    vocabulary_aliases=self.config.get("vocabulary_aliases", {}),
+                )
+                text, latency, warning = result.text, result.latency, result.warning
+            elif provider == "codex":
+                lang = self.config.get("language", "tr")
+                service = self._get_codex_service()
                 result = service.transcribe_and_format(
                     audio_bytes, mode=mode, custom_vocabulary=custom_vocab, language=lang,
                     vocabulary_aliases=self.config.get("vocabulary_aliases", {}),
