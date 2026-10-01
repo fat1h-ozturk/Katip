@@ -8,7 +8,8 @@ import json
 import threading
 from ctypes.util import find_library
 from typing import Optional
-from PySide6.QtCore import QIODevice, QObject, QSaveFile, Signal, QTimer, Qt
+from PySide6.QtCore import QIODevice, QObject, QSaveFile, Signal, QTimer, Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                               QPushButton, QSystemTrayIcon, QTabWidget, QTextEdit, QVBoxLayout)
 
@@ -42,6 +43,7 @@ class WorkerSignals(QObject):
     stop_received = Signal()
     notify_received = Signal()
     settings_received = Signal()
+    update_available = Signal(str, str)
 
 class KatipApp:
     """The central Katip application."""
@@ -69,6 +71,8 @@ class KatipApp:
         self.signals.stop_received.connect(self.stop_recording_and_process)
         self.signals.notify_received.connect(self._on_notify_running)
         self.signals.settings_received.connect(self.open_settings)
+        self.signals.update_available.connect(self._on_update_available)
+        self.update_toast = None
 
         # Core Engines
         self.sound = SoundPlayer(enabled=self.config.get("sound_effects", True))
@@ -130,6 +134,9 @@ class KatipApp:
         # Guide user: if API key is not configured yet, open Settings on first run
         if not self.config.get_api_key():
             QTimer.singleShot(400, self.open_settings)
+
+        # Check for updates in background shortly after launch
+        QTimer.singleShot(2500, self._check_for_updates)
 
     def _get_gemini_service(self) -> GeminiService:
         """Returns a cached GeminiService, recreating only if config changed."""
@@ -462,6 +469,55 @@ class KatipApp:
 
     def _notify_recovery(self, message: str) -> None:
         self.tray.showMessage("Katip", message, QSystemTrayIcon.MessageIcon.Warning, 6000)
+
+    def _check_for_updates(self) -> None:
+        """Launches background thread to check for latest release."""
+        threading.Thread(target=self._update_checker_worker, daemon=True).start()
+
+    def _update_checker_worker(self) -> None:
+        import re
+        import requests
+        from . import __version__
+        try:
+            resp = requests.get(
+                "https://api.github.com/repos/fat1h-ozturk/Katip/releases/latest",
+                headers={"User-Agent": "Katip-App"},
+                timeout=6,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                latest_tag = data.get("tag_name", "").strip()
+                release_url = data.get("html_url", "https://github.com/fat1h-ozturk/Katip/releases/latest")
+
+                def parse_v(v: str):
+                    return [int(x) for x in re.findall(r"\d+", v)]
+
+                if latest_tag and parse_v(latest_tag) > parse_v(__version__):
+                    self.signals.update_available.emit(latest_tag, release_url)
+        except Exception:
+            pass
+
+    def _on_update_available(self, new_version: str, release_url: str) -> None:
+        """Triggered on GUI thread when a new version is detected."""
+        # Native OS system tray notification
+        self.tray.showMessage(
+            f"⚡ Yeni Güncelleme: {new_version}",
+            "Güncellemek için yeni sürümü kurun. Ayrıntılar için tıklayın.",
+            QSystemTrayIcon.MessageIcon.Information,
+            12000,
+        )
+        try:
+            self.tray.messageClicked.connect(lambda: QDesktopServices.openUrl(QUrl(release_url)))
+        except Exception:
+            pass
+
+        # Floating toast notification in top-right corner
+        try:
+            from .ui.toast import UpdateNotificationToast
+            self.update_toast = UpdateNotificationToast(new_version, release_url)
+            self.update_toast.show()
+        except Exception as error:
+            print(f"[Update] Toast notification could not be shown: {error}")
 
     def retry_last_audio(self) -> None:
         if self.is_busy_processing or self.recorder.is_recording:
