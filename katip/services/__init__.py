@@ -7,11 +7,13 @@ from .groq import GroqService, GroqResult
 from .openai import OpenAIService, OpenAIResult
 from .claude import ClaudeService, ClaudeResult
 from .codex import CodexService, CodexResult
+from .antigravity import AntigravityService, AntigravityResult
 
 __all__ = [
     "GeminiService", 
     "GroqService", "GroqResult",
     "OpenAIService", "OpenAIResult", 
     "ClaudeService", "ClaudeResult",
-    "CodexService", "CodexResult"
+    "CodexService", "CodexResult",
+    "AntigravityService", "AntigravityResult"
 ]

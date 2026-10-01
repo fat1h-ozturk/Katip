@@ -179,6 +179,7 @@ class SettingsDialog(QDialog):
         self.provider_combo.addItem("ChatGPT (OpenAI)", "openai")
         self.provider_combo.addItem("Claude (Anthropic)", "claude")
         self.provider_combo.addItem("Codex Desktop (Yerel Uygulama)", "codex")
+        self.provider_combo.addItem("Antigravity CLI (Yerel Uygulama)", "agy")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         ai_layout.addRow("Sağlayıcı:", self.provider_combo)
 
@@ -275,6 +276,16 @@ class SettingsDialog(QDialog):
         self.codex_llm_combo.addItem("gpt-5-mini", "gpt-5-mini")
         self.codex_llm_label = QLabel("Codex LLM Modeli:")
         ai_layout.addRow(self.codex_llm_label, self.codex_llm_combo)
+        
+        # Antigravity Model
+        self.agy_llm_combo = QComboBox()
+        self.agy_llm_combo.setEditable(True)
+        self.agy_llm_combo.addItem("Varsayılan (Antigravity Ayarları)", "")
+        self.agy_llm_combo.addItem("pro", "pro")
+        self.agy_llm_combo.addItem("flash", "flash")
+        self.agy_llm_combo.addItem("flash_lite", "flash_lite")
+        self.agy_llm_label = QLabel("Antigravity Modeli:")
+        ai_layout.addRow(self.agy_llm_label, self.agy_llm_combo)
 
         # STT Note for Claude and Codex
         self.stt_note_label = QLabel("Not: Bu sağlayıcı için ses çevirisinde Groq veya OpenAI anahtarı gereklidir.")
@@ -428,8 +439,9 @@ class SettingsDialog(QDialog):
         is_openai = provider == "openai"
         is_claude = provider == "claude"
         is_codex = provider == "codex"
+        is_agy = provider == "agy"
         
-        needs_stt_key = is_claude or is_codex
+        needs_stt_key = is_claude or is_codex or is_agy
 
         # Gemini
         self.gemini_key_label.setVisible(is_gemini)
@@ -463,6 +475,10 @@ class SettingsDialog(QDialog):
         # Codex
         self.codex_llm_label.setVisible(is_codex)
         self.codex_llm_combo.setVisible(is_codex)
+        
+        # Antigravity
+        self.agy_llm_label.setVisible(is_agy)
+        self.agy_llm_combo.setVisible(is_agy)
         
         # Note
         self.stt_note_label.setVisible(needs_stt_key)
@@ -529,6 +545,7 @@ class SettingsDialog(QDialog):
         self.claude_llm_combo.setCurrentText(self.config.get("claude_llm_model", "claude-5-sonnet"))
         
         self.codex_llm_combo.setCurrentText(self.config.get("codex_model", ""))
+        self.agy_llm_combo.setCurrentText(self.config.get("agy_model", ""))
 
         lang = self.config.get("language", "auto")
         lang_idx = self.language_combo.findData(lang)
@@ -590,6 +607,7 @@ class SettingsDialog(QDialog):
             "anthropic_api_key": self.anthropic_key_edit.text().strip(),
             "claude_llm_model": self.claude_llm_combo.currentText().strip(),
             "codex_model": self.codex_llm_combo.currentText().strip(),
+            "agy_model": self.agy_llm_combo.currentText().strip(),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
             "vad_mode": self.vad_combo.currentData(),
