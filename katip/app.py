@@ -514,15 +514,25 @@ class KatipApp:
             details = QTextEdit()
             details.setObjectName("resultDetails")
             details.setReadOnly(True)
-            changes = "\n".join(result.literal_changes) or "Belirgin literal farkı bulunmadı. Bu, anlamın korunduğunu kanıtlamaz."
+            
+            literal_changes = getattr(result, "literal_changes", [])
+            changes = "\n".join(literal_changes) or "Belirgin literal farkı bulunmadı. Bu, anlamın korunduğunu kanıtlamaz."
+            mode = getattr(result, "mode", "dictation")
+            language = getattr(result, "language", "auto")
+            stt_model = getattr(result, "stt_model", "Bilinmiyor")
+            llm_model = getattr(result, "llm_model", "Bilinmiyor")
+            omitted_stt = getattr(result, "omitted_stt_terms", 0)
+            omitted_fmt = getattr(result, "omitted_formatter_terms", 0)
+            segments = getattr(result, "segments", [])
+            
             details.setPlainText(
-                f"Mod: {result.mode}\nDil: {result.language}\n"
-                f"STT: {result.stt_model}\nMetin modeli: {result.llm_model}\n\n"
-                f"STT bağlamına sığmayan terim: {result.omitted_stt_terms}\n"
-                f"Formatter bağlamına sığmayan ipucu: {result.omitted_formatter_terms}\n\n"
+                f"Mod: {mode}\nDil: {language}\n"
+                f"STT: {stt_model}\nMetin modeli: {llm_model}\n\n"
+                f"STT bağlamına sığmayan terim: {omitted_stt}\n"
+                f"Formatter bağlamına sığmayan ipucu: {omitted_fmt}\n\n"
                 "İnceleme bilgisi (öz düzeltme ve özetleme bu farkları açıklayabilir):\n"
                 f"{changes}\n\nSegment bilgisi (kelime güveni veya doğruluk yüzdesi değildir):\n"
-                + json.dumps(result.segments, ensure_ascii=False, indent=2)
+                + json.dumps(segments, ensure_ascii=False, indent=2)
             )
             tabs.addTab(details, "Ayrıntılar")
             tabs.setCurrentIndex(1 if result.formatted_text is not None else 0)
@@ -561,11 +571,24 @@ class KatipApp:
         original = self.last_groq_result
         if original is None or not original.raw_transcript:
             return
-        mode = self.config.get("mode", "dictation") if use_current_settings else original.mode
-        vocabulary = list(self.config.get("custom_vocabulary", [])) if use_current_settings else list(original.custom_vocabulary)
-        aliases = dict(self.config.get("vocabulary_aliases", {})) if use_current_settings else dict(original.vocabulary_aliases)
-        # Keep the original models even if settings were changed after this recording.
-        service = self._get_groq_service(stt_model=original.stt_model, llm_model=original.llm_model)
+        mode = self.config.get("mode", "dictation") if use_current_settings else getattr(original, "mode", self.config.get("mode", "dictation"))
+        vocabulary = list(self.config.get("custom_vocabulary", [])) if use_current_settings else list(getattr(original, "custom_vocabulary", self.config.get("custom_vocabulary", [])))
+        aliases = dict(self.config.get("vocabulary_aliases", {})) if use_current_settings else dict(getattr(original, "vocabulary_aliases", self.config.get("vocabulary_aliases", {})))
+        
+        provider = self.config.get("provider", "gemini")
+        if provider == "gemini":
+            service = self._get_gemini_service()
+        elif provider == "openai":
+            service = self._get_openai_service()
+        elif provider == "claude":
+            service = self._get_claude_service()
+        elif provider == "codex":
+            service = self._get_codex_service()
+        elif provider == "agy":
+            service = self._get_agy_service()
+        else:
+            service = self._get_groq_service()
+            
         self.is_busy_processing = True
         self.last_error = ""
         self.pill.show_processing()
