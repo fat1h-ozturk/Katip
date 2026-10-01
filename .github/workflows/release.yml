@@ -71,7 +71,7 @@ jobs:
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev rpm
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev rpm libegl1 libgl1 libxkbcommon-x11-0
 
       # ASVS 15.2.1: keep the release packager on a reviewed, explicit version.
       - name: Install application and pinned packager
