@@ -18,6 +18,8 @@ from .hotkey import HotkeyManager
 from .injector import TextInjector
 from .services.gemini import GeminiService
 from .services.groq import GroqResult, GroqService
+from .services.openai import OpenAIService
+from .services.claude import ClaudeService
 from .sound import SoundPlayer
 from .ui.overlay_controller import LayerOverlayController
 from .ui.pill import FloatingPill
@@ -117,6 +119,8 @@ class KatipApp:
         # Lazy-initialized AI service singletons (avoids re-creating per request)
         self._gemini_service: Optional[GeminiService] = None
         self._groq_service: Optional[GroqService] = None
+        self._openai_service: Optional[OpenAIService] = None
+        self._claude_service: Optional[ClaudeService] = None
 
         # Guide user: if API key is not configured yet, open Settings on first run
         if not self.config.get_api_key():
@@ -146,6 +150,50 @@ class KatipApp:
                 self._groq_service._session.close()
             self._groq_service = GroqService(api_key=api_key, stt_model=stt_model, llm_model=llm_model)
         return self._groq_service
+
+    def _get_openai_service(self) -> OpenAIService:
+        api_key = self.config.get("openai_api_key", "")
+        stt_model = self.config.get("openai_stt_model", "whisper-1")
+        llm_model = self.config.get("openai_llm_model", "gpt-4o-mini")
+        if self._openai_service is None or \
+           self._openai_service.api_key != api_key.strip() or \
+           self._openai_service.stt_model != stt_model or \
+           self._openai_service.llm_model != llm_model:
+            if self._openai_service is not None:
+                self._openai_service._session.close()
+            self._openai_service = OpenAIService(api_key=api_key, stt_model=stt_model, llm_model=llm_model)
+        return self._openai_service
+
+    def _get_claude_service(self) -> ClaudeService:
+        api_key = self.config.get("anthropic_api_key", "")
+        llm_model = self.config.get("claude_llm_model", "claude-3-5-sonnet-20241022")
+        
+        groq_key = self.config.get("groq_api_key", "")
+        openai_key = self.config.get("openai_api_key", "")
+        
+        if groq_key:
+            stt_provider = "groq"
+            stt_api_key = groq_key
+            stt_model = self.config.get("groq_stt_model", "whisper-large-v3-turbo")
+        elif openai_key:
+            stt_provider = "openai"
+            stt_api_key = openai_key
+            stt_model = self.config.get("openai_stt_model", "whisper-1")
+        else:
+            stt_provider = ""
+            stt_api_key = ""
+            stt_model = ""
+
+        if self._claude_service is None or \
+           self._claude_service.api_key != api_key.strip() or \
+           self._claude_service.llm_model != llm_model or \
+           self._claude_service.stt_provider != stt_provider or \
+           self._claude_service.stt_api_key != stt_api_key.strip():
+            if self._claude_service is not None:
+                self._claude_service._session.close()
+            self._claude_service = ClaudeService(api_key=api_key, llm_model=llm_model,
+                                                 stt_provider=stt_provider, stt_api_key=stt_api_key, stt_model=stt_model)
+        return self._claude_service
 
     def start_recording(self) -> None:
         """Starts audio recording if not already recording or busy."""
@@ -242,6 +290,22 @@ class KatipApp:
                 )
                 warning = service.last_warning
                 result = None
+            elif provider == "openai":
+                lang = self.config.get("language", "tr")
+                service = self._get_openai_service()
+                result = service.transcribe_and_format(
+                    audio_bytes, mode=mode, custom_vocabulary=custom_vocab, language=lang,
+                    vocabulary_aliases=self.config.get("vocabulary_aliases", {}),
+                )
+                text, latency, warning = result.text, result.latency, result.warning
+            elif provider == "claude":
+                lang = self.config.get("language", "tr")
+                service = self._get_claude_service()
+                result = service.transcribe_and_format(
+                    audio_bytes, mode=mode, custom_vocabulary=custom_vocab, language=lang,
+                    vocabulary_aliases=self.config.get("vocabulary_aliases", {}),
+                )
+                text, latency, warning = result.text, result.latency, result.warning
             else:
                 lang = self.config.get("language", "tr")
                 service = self._get_groq_service()

@@ -176,6 +176,8 @@ class SettingsDialog(QDialog):
         self.provider_combo = QComboBox()
         self.provider_combo.addItem("Google Gemini", "gemini")
         self.provider_combo.addItem("Groq Cloud (Whisper + Llama 3)", "groq")
+        self.provider_combo.addItem("ChatGPT (OpenAI)", "openai")
+        self.provider_combo.addItem("Claude (Anthropic)", "claude")
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         ai_layout.addRow("Sağlayıcı:", self.provider_combo)
 
@@ -219,6 +221,46 @@ class SettingsDialog(QDialog):
         self.groq_llm_combo.addItem("llama-3.3-70b-versatile (Meta Llama 3.3 70B)", "llama-3.3-70b-versatile")
         self.groq_llm_label = QLabel("Groq LLM (Metin) Modeli:")
         ai_layout.addRow(self.groq_llm_label, self.groq_llm_combo)
+
+        # OpenAI API Key
+        self.openai_key_edit = QLineEdit()
+        self.openai_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.openai_key_edit.setPlaceholderText("sk-...")
+        self.openai_key_label = QLabel("OpenAI API Anahtarı:")
+        ai_layout.addRow(self.openai_key_label, self.openai_key_edit)
+
+        # OpenAI Models
+        self.openai_stt_combo = QComboBox()
+        self.openai_stt_combo.addItem("whisper-1", "whisper-1")
+        self.openai_stt_label = QLabel("OpenAI STT Modeli:")
+        ai_layout.addRow(self.openai_stt_label, self.openai_stt_combo)
+
+        self.openai_llm_combo = QComboBox()
+        self.openai_llm_combo.setEditable(True)
+        self.openai_llm_combo.addItem("gpt-4o-mini", "gpt-4o-mini")
+        self.openai_llm_combo.addItem("gpt-4o", "gpt-4o")
+        self.openai_llm_label = QLabel("OpenAI LLM Modeli:")
+        ai_layout.addRow(self.openai_llm_label, self.openai_llm_combo)
+
+        # Anthropic API Key
+        self.anthropic_key_edit = QLineEdit()
+        self.anthropic_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.anthropic_key_edit.setPlaceholderText("sk-ant-...")
+        self.anthropic_key_label = QLabel("Anthropic API Anahtarı:")
+        ai_layout.addRow(self.anthropic_key_label, self.anthropic_key_edit)
+
+        # Claude Model
+        self.claude_llm_combo = QComboBox()
+        self.claude_llm_combo.setEditable(True)
+        self.claude_llm_combo.addItem("claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20241022")
+        self.claude_llm_combo.addItem("claude-3-5-haiku-20241022", "claude-3-5-haiku-20241022")
+        self.claude_llm_label = QLabel("Claude LLM Modeli:")
+        ai_layout.addRow(self.claude_llm_label, self.claude_llm_combo)
+
+        # Claude Note
+        self.claude_note_label = QLabel("Not: Claude için ses çevirisinde Groq veya OpenAI anahtarı gereklidir.")
+        self.claude_note_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        ai_layout.addRow("", self.claude_note_label)
 
         # Language selection
         self.language_combo = QComboBox()
@@ -360,19 +402,42 @@ class SettingsDialog(QDialog):
         main_layout.addLayout(btn_layout)
 
     def _on_provider_changed(self) -> None:
-        is_gemini = self.provider_combo.currentData() == "gemini"
+        provider = self.provider_combo.currentData()
+        
+        is_gemini = provider == "gemini"
+        is_groq = provider == "groq"
+        is_openai = provider == "openai"
+        is_claude = provider == "claude"
+
+        # Gemini
         self.gemini_key_label.setVisible(is_gemini)
         self.gemini_key_edit.setVisible(is_gemini)
         self.toggle_key_btn.setVisible(is_gemini)
         self.gemini_model_label.setVisible(is_gemini)
         self.gemini_model_combo.setVisible(is_gemini)
 
-        self.groq_key_label.setVisible(not is_gemini)
-        self.groq_key_edit.setVisible(not is_gemini)
-        self.groq_stt_label.setVisible(not is_gemini)
-        self.groq_stt_combo.setVisible(not is_gemini)
-        self.groq_llm_label.setVisible(not is_gemini)
-        self.groq_llm_combo.setVisible(not is_gemini)
+        # Groq (show STT models for Groq or Claude, since Claude relies on Groq/OpenAI for STT)
+        self.groq_key_label.setVisible(is_groq or is_claude)
+        self.groq_key_edit.setVisible(is_groq or is_claude)
+        self.groq_stt_label.setVisible(is_groq)
+        self.groq_stt_combo.setVisible(is_groq)
+        self.groq_llm_label.setVisible(is_groq)
+        self.groq_llm_combo.setVisible(is_groq)
+        
+        # OpenAI
+        self.openai_key_label.setVisible(is_openai or is_claude)
+        self.openai_key_edit.setVisible(is_openai or is_claude)
+        self.openai_stt_label.setVisible(is_openai)
+        self.openai_stt_combo.setVisible(is_openai)
+        self.openai_llm_label.setVisible(is_openai)
+        self.openai_llm_combo.setVisible(is_openai)
+        
+        # Anthropic (Claude)
+        self.anthropic_key_label.setVisible(is_claude)
+        self.anthropic_key_edit.setVisible(is_claude)
+        self.claude_llm_label.setVisible(is_claude)
+        self.claude_llm_combo.setVisible(is_claude)
+        self.claude_note_label.setVisible(is_claude)
 
     def _toggle_key_visibility(self) -> None:
         if self.gemini_key_edit.echoMode() == QLineEdit.EchoMode.Password:
@@ -423,6 +488,17 @@ class SettingsDialog(QDialog):
         llm_idx = self.groq_llm_combo.findData(llm_model)
         if llm_idx >= 0:
             self.groq_llm_combo.setCurrentIndex(llm_idx)
+            
+        self.openai_key_edit.setText(self.config.get("openai_api_key", ""))
+        openai_stt = self.config.get("openai_stt_model", "whisper-1")
+        o_stt_idx = self.openai_stt_combo.findData(openai_stt)
+        if o_stt_idx >= 0:
+            self.openai_stt_combo.setCurrentIndex(o_stt_idx)
+            
+        self.openai_llm_combo.setCurrentText(self.config.get("openai_llm_model", "gpt-4o-mini"))
+        
+        self.anthropic_key_edit.setText(self.config.get("anthropic_api_key", ""))
+        self.claude_llm_combo.setCurrentText(self.config.get("claude_llm_model", "claude-3-5-sonnet-20241022"))
 
         lang = self.config.get("language", "auto")
         lang_idx = self.language_combo.findData(lang)
@@ -478,6 +554,11 @@ class SettingsDialog(QDialog):
             "groq_api_key": self.groq_key_edit.text().strip(),
             "groq_stt_model": self.groq_stt_combo.currentData(),
             "groq_llm_model": self.groq_llm_combo.currentData(),
+            "openai_api_key": self.openai_key_edit.text().strip(),
+            "openai_stt_model": self.openai_stt_combo.currentData(),
+            "openai_llm_model": self.openai_llm_combo.currentText().strip(),
+            "anthropic_api_key": self.anthropic_key_edit.text().strip(),
+            "claude_llm_model": self.claude_llm_combo.currentText().strip(),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
             "vad_mode": self.vad_combo.currentData(),

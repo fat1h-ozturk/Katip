@@ -29,12 +29,17 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "provider": "gemini",  # "gemini" or "groq"
+    "provider": "gemini",  # "gemini", "groq", "openai", "claude"
     "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
     "gemini_model": DEFAULT_GEMINI_MODEL,
     "groq_api_key": os.environ.get("GROQ_API_KEY", ""),
     "groq_stt_model": "whisper-large-v3-turbo",
     "groq_llm_model": "qwen/qwen3.8-27b",
+    "openai_api_key": os.environ.get("OPENAI_API_KEY", ""),
+    "openai_stt_model": "whisper-1",
+    "openai_llm_model": "gpt-4o-mini",
+    "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
+    "claude_llm_model": "claude-3-5-sonnet-20241022",
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
     "trigger_mode": "toggle",  # "toggle" or "push_to_talk"
@@ -76,7 +81,7 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(values, dict):
         raise ValueError("Ayarlar bir JSON nesnesi olmalıdır.")
     choices = {
-        "provider": ("gemini", "groq"),
+        "provider": ("gemini", "groq", "openai", "claude"),
         "mode": ("dictation", "chat", "email", "prompt", "bullets"),
         "trigger_mode": ("toggle", "push_to_talk"),
         "language": ("auto", "tr", "en"),
@@ -148,6 +153,10 @@ class ConfigManager:
             self.data["gemini_api_key"] = os.environ["GEMINI_API_KEY"]
         if not self.data.get("groq_api_key") and os.environ.get("GROQ_API_KEY"):
             self.data["groq_api_key"] = os.environ["GROQ_API_KEY"]
+        if not self.data.get("openai_api_key") and os.environ.get("OPENAI_API_KEY"):
+            self.data["openai_api_key"] = os.environ["OPENAI_API_KEY"]
+        if not self.data.get("anthropic_api_key") and os.environ.get("ANTHROPIC_API_KEY"):
+            self.data["anthropic_api_key"] = os.environ["ANTHROPIC_API_KEY"]
 
     def save(self) -> None:
         """Atomically replace the file; never truncate the last valid settings."""
@@ -191,4 +200,8 @@ class ConfigManager:
             return self.get("gemini_api_key", "").strip()
         elif provider == "groq":
             return self.get("groq_api_key", "").strip()
+        elif provider == "openai":
+            return self.get("openai_api_key", "").strip()
+        elif provider == "claude":
+            return self.get("anthropic_api_key", "").strip()
         return ""
