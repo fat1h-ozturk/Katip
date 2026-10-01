@@ -577,17 +577,8 @@ class KatipApp:
         vocabulary = list(self.config.get("custom_vocabulary", [])) if use_current_settings else list(getattr(original, "custom_vocabulary", self.config.get("custom_vocabulary", [])))
         aliases = dict(self.config.get("vocabulary_aliases", {})) if use_current_settings else dict(getattr(original, "vocabulary_aliases", self.config.get("vocabulary_aliases", {})))
         
-        provider = self.config.get("provider", "gemini")
-        if provider == "gemini":
-            service = self._get_gemini_service()
-        elif provider == "openai":
-            service = self._get_openai_service()
-        elif provider == "claude":
-            service = self._get_claude_service()
-        elif provider == "codex":
-            service = self._get_codex_service()
-        elif provider == "agy":
-            service = self._get_agy_service()
+        if hasattr(original, "stt_model") and hasattr(original, "llm_model"):
+            service = self._get_groq_service(stt_model=original.stt_model, llm_model=original.llm_model)
         else:
             service = self._get_groq_service()
             
