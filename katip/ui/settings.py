@@ -68,7 +68,7 @@ class SettingsDialog(QDialog):
         self.config = config
         self.can_edit = can_edit or (lambda: True)
         self.setWindowTitle("Katip Ayarları")
-        self.resize(540, 650)
+        self.resize(750, 750)
         self.setStyleSheet(MINIMAL_DARK_STYLE)
 
         self._build_ui()
