@@ -7,7 +7,7 @@ from typing import Callable, Optional
 from contextlib import suppress
 import sys
 import unicodedata
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, Signal, QEvent, QObject
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -123,6 +123,16 @@ def parse_vocabulary_aliases(text: str) -> dict[str, str]:
         if len(aliases) > 100:
             raise ValueError("Yazım eşleşmeleri en fazla 100 kayıt olabilir.")
     return aliases
+
+class ComboClickFilter(QObject):
+    """Event filter to show QComboBox popup when its line edit is clicked."""
+    def __init__(self, combo: QComboBox):
+        super().__init__(combo)
+        self.combo = combo
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.MouseButtonPress:
+            self.combo.showPopup()
+        return super().eventFilter(obj, event)
 
 class SettingsDialog(QDialog):
     """Settings modal window for configuring Katip."""
@@ -430,6 +440,13 @@ class SettingsDialog(QDialog):
         btn_layout.addStretch()
         btn_layout.addWidget(self.cancel_btn)
         btn_layout.addWidget(self.save_btn)
+        
+        # Apply the click filter to all editable comboboxes
+        for combo in (self.gemini_model_combo, self.openai_llm_combo, self.claude_llm_combo, self.codex_llm_combo, self.agy_llm_combo):
+            filter_obj = ComboClickFilter(combo)
+            setattr(combo, "_click_filter", filter_obj)
+            combo.lineEdit().installEventFilter(filter_obj)
+            
         main_layout.addLayout(btn_layout)
 
     def _on_provider_changed(self) -> None:
