@@ -362,7 +362,7 @@ class SettingsDialog(QDialog):
         main_layout.addLayout(btn_layout)
         
         # Make all inputs stretch to uniform maximum width
-        for widget in self.findChildren((QComboBox, QLineEdit)):
+        for widget in self.findChildren(QComboBox) + self.findChildren(QLineEdit):
             widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def _on_provider_changed(self) -> None:
