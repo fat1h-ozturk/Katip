@@ -601,6 +601,10 @@ class SettingsDialog(QDialog):
         except ValueError as error:
             QMessageBox.warning(self, "Yazım Eşleşmesi Geçersiz", str(error))
             return
+        def _get_val(combo):
+            data = combo.currentData()
+            return data if data is not None else combo.currentText().strip()
+
         values = {
             "provider": self.provider_combo.currentData(),
             "gemini_api_key": self.gemini_key_edit.text().strip(),
@@ -612,9 +616,9 @@ class SettingsDialog(QDialog):
             "openai_stt_model": self.openai_stt_combo.currentData(),
             "openai_llm_model": self.openai_llm_combo.currentText().strip(),
             "anthropic_api_key": self.anthropic_key_edit.text().strip(),
-            "claude_llm_model": self.claude_llm_combo.currentData() or self.claude_llm_combo.currentText().strip(),
-            "codex_model": self.codex_llm_combo.currentData() or self.codex_llm_combo.currentText().strip(),
-            "agy_model": self.agy_llm_combo.currentData() or self.agy_llm_combo.currentText().strip(),
+            "claude_llm_model": _get_val(self.claude_llm_combo),
+            "codex_model": _get_val(self.codex_llm_combo),
+            "agy_model": _get_val(self.agy_llm_combo),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
             "vad_mode": self.vad_combo.currentData(),
