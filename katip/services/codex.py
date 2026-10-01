@@ -1,6 +1,7 @@
 import json
 import time
 import subprocess
+import sys
 from typing import Optional
 import requests
 
@@ -57,14 +58,17 @@ class CodexService:
             return CodexResult("", None, round(time.time() - start_time, 2))
             
         # 2. Formatting (Codex CLI)
-        sys_prompt, omitted = build_groq_formatter_prompt(mode, custom_vocabulary or [], vocabulary_aliases or {})
+        sys_prompt = build_groq_formatter_prompt(mode)
         
         # Talimat ve ham metin
-        prompt = f"{sys_prompt}\n\n---\n\nCRITICAL: Respond ONLY with a valid JSON object. Exact format: {{\"text\": \"formatted text here\"}}\n\nText to format:\n{raw_text}"
+        user_data = json.dumps({"transcript": raw_text, "language": language,
+                                "custom_vocabulary": custom_vocabulary or [],
+                                "vocabulary_aliases": vocabulary_aliases or {}}, ensure_ascii=False)
+        prompt = f"{sys_prompt}\n\n---\n\nCRITICAL: Respond ONLY with a valid JSON object. Exact format: {{\"text\": \"formatted text here\"}}\n\nUser data:\n{user_data}"
         
         cmd = [
             "codex", "exec", 
-            "-c", 'sandbox_mode="none"',
+            "-c", 'sandbox_mode="read-only"',
             "-c", 'approval_policy="never"',
             "--skip-git-repo-check",
             "--json"
@@ -75,7 +79,9 @@ class CodexService:
         cmd.append(prompt)
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            # ASVS 1.2.5: pass arguments without a shell; decode CLI output as UTF-8.
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+                                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
         except FileNotFoundError:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Sistemde 'codex' komutu bulunamadı. Lütfen Codex Desktop'ın yüklü olduğundan ve PATH'te olduğundan emin olun.")
         except subprocess.TimeoutExpired:
@@ -85,9 +91,23 @@ class CodexService:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), f"Codex Hatası: {result.stderr.strip()}")
             
         try:
-            # Codex output json parse
-            parsed = json.loads(result.stdout.strip())
-            answer_content = parsed.get("answer", result.stdout.strip())
+            # --json emits JSONL events, not a single answer object.
+            answer_content = ""
+            completed = False
+            for line in result.stdout.splitlines():
+                if not line.strip():
+                    continue
+                event = json.loads(line)
+                if event.get("type") in ("error", "turn.failed"):
+                    raise ValueError("Codex işlemi tamamlanamadı")
+                if event.get("type") == "item.completed":
+                    item = event.get("item", {})
+                    if item.get("type") == "agent_message":
+                        answer_content = item.get("text", "")
+                if event.get("type") == "turn.completed":
+                    completed = True
+            if not completed or not isinstance(answer_content, str) or not answer_content.strip():
+                raise ValueError("Codex yanıtı tamamlanmadı")
             
             # İçinde JSON var mı kontrol et
             inner_parsed = None
@@ -102,14 +122,12 @@ class CodexService:
                     extracted = answer_content.split("```")[1].split("```")[0].strip()
                     inner_parsed = json.loads(extracted)
             
-            if inner_parsed and isinstance(inner_parsed, dict) and "text" in inner_parsed:
-                formatted_text = inner_parsed["text"]
-            else:
-                # Fallback to returning the raw answer if json parsing fails
-                formatted_text = answer_content
-                
-            if not formatted_text.strip():
-                raise ValueError("Boş metin")
+            # ASVS 2.2.1: accept only the requested non-empty text field.
+            if not isinstance(inner_parsed, dict):
+                raise ValueError("Geçersiz yanıt")
+            formatted_text = inner_parsed.get("text")
+            if not isinstance(formatted_text, str) or not formatted_text.strip():
+                raise ValueError("Boş veya geçersiz metin")
         except Exception:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Codex yanıtı JSON olarak ayrıştırılamadı.")
             
