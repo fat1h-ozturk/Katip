@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -359,6 +360,10 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(self.cancel_btn)
         btn_layout.addWidget(self.save_btn)
         main_layout.addLayout(btn_layout)
+        
+        # Make all inputs stretch to uniform maximum width
+        for widget in self.findChildren((QComboBox, QLineEdit)):
+            widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def _on_provider_changed(self) -> None:
         provider = self.provider_combo.currentData()
