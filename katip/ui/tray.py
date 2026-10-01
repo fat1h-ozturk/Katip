@@ -143,9 +143,9 @@ class TrayIcon(QSystemTrayIcon):
         self.setContextMenu(self.menu)
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            # Single left-click toggles recording
-            self.toggle_requested.emit()
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            # Left-click opens settings
+            self.settings_requested.emit()
 
     def _on_mode_selected(self, mode: str) -> None:
         self.current_mode = mode
