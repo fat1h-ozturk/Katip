@@ -154,7 +154,7 @@ class KatipApp:
     def _get_openai_service(self) -> OpenAIService:
         api_key = self.config.get("openai_api_key", "")
         stt_model = self.config.get("openai_stt_model", "whisper-1")
-        llm_model = self.config.get("openai_llm_model", "gpt-4o-mini")
+        llm_model = self.config.get("openai_llm_model", "gpt-5-mini")
         if self._openai_service is None or \
            self._openai_service.api_key != api_key.strip() or \
            self._openai_service.stt_model != stt_model or \
@@ -166,7 +166,7 @@ class KatipApp:
 
     def _get_claude_service(self) -> ClaudeService:
         api_key = self.config.get("anthropic_api_key", "")
-        llm_model = self.config.get("claude_llm_model", "claude-3-5-sonnet-20241022")
+        llm_model = self.config.get("claude_llm_model", "claude-5-sonnet")
         
         groq_key = self.config.get("groq_api_key", "")
         openai_key = self.config.get("openai_api_key", "")

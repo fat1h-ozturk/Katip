@@ -37,9 +37,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "groq_llm_model": "qwen/qwen3.8-27b",
     "openai_api_key": os.environ.get("OPENAI_API_KEY", ""),
     "openai_stt_model": "whisper-1",
-    "openai_llm_model": "gpt-4o-mini",
+    "openai_llm_model": "gpt-5-mini",
     "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-    "claude_llm_model": "claude-3-5-sonnet-20241022",
+    "claude_llm_model": "claude-5-sonnet",
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
     "trigger_mode": "toggle",  # "toggle" or "push_to_talk"

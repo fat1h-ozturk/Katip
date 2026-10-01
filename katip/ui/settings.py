@@ -237,6 +237,11 @@ class SettingsDialog(QDialog):
 
         self.openai_llm_combo = QComboBox()
         self.openai_llm_combo.setEditable(True)
+        self.openai_llm_combo.addItem("gpt-5-mini", "gpt-5-mini")
+        self.openai_llm_combo.addItem("gpt-5.4", "gpt-5.4")
+        self.openai_llm_combo.addItem("gpt-5.5", "gpt-5.5")
+        self.openai_llm_combo.addItem("gpt-5.6-luna", "gpt-5.6-luna")
+        self.openai_llm_combo.addItem("gpt-5.6-terra", "gpt-5.6-terra")
         self.openai_llm_combo.addItem("gpt-4o-mini", "gpt-4o-mini")
         self.openai_llm_combo.addItem("gpt-4o", "gpt-4o")
         self.openai_llm_label = QLabel("OpenAI LLM Modeli:")
@@ -252,8 +257,10 @@ class SettingsDialog(QDialog):
         # Claude Model
         self.claude_llm_combo = QComboBox()
         self.claude_llm_combo.setEditable(True)
+        self.claude_llm_combo.addItem("claude-5-sonnet", "claude-5-sonnet")
+        self.claude_llm_combo.addItem("claude-5-opus", "claude-5-opus")
+        self.claude_llm_combo.addItem("claude-4.5-haiku", "claude-4.5-haiku")
         self.claude_llm_combo.addItem("claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20241022")
-        self.claude_llm_combo.addItem("claude-3-5-haiku-20241022", "claude-3-5-haiku-20241022")
         self.claude_llm_label = QLabel("Claude LLM Modeli:")
         ai_layout.addRow(self.claude_llm_label, self.claude_llm_combo)
 
