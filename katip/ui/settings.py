@@ -124,16 +124,6 @@ def parse_vocabulary_aliases(text: str) -> dict[str, str]:
             raise ValueError("Yazım eşleşmeleri en fazla 100 kayıt olabilir.")
     return aliases
 
-class ComboClickFilter(QObject):
-    """Event filter to show QComboBox popup when its line edit is clicked."""
-    def __init__(self, combo: QComboBox):
-        super().__init__(combo)
-        self.combo = combo
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.MouseButtonRelease:
-            self.combo.showPopup()
-        return super().eventFilter(obj, event)
-
 class SettingsDialog(QDialog):
     """Settings modal window for configuring Katip."""
 
@@ -208,7 +198,6 @@ class SettingsDialog(QDialog):
 
         # Gemini Model
         self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.setEditable(True)
         self.gemini_model_combo.addItems([DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite"])
         self.gemini_model_label = QLabel("Gemini Modeli:")
         ai_layout.addRow(self.gemini_model_label, self.gemini_model_combo)
@@ -248,7 +237,6 @@ class SettingsDialog(QDialog):
         ai_layout.addRow(self.openai_stt_label, self.openai_stt_combo)
 
         self.openai_llm_combo = QComboBox()
-        self.openai_llm_combo.setEditable(True)
         self.openai_llm_combo.addItem("gpt-5-mini", "gpt-5-mini")
         self.openai_llm_combo.addItem("gpt-5.4", "gpt-5.4")
         self.openai_llm_combo.addItem("gpt-5.5", "gpt-5.5")
@@ -268,7 +256,6 @@ class SettingsDialog(QDialog):
 
         # Claude Model
         self.claude_llm_combo = QComboBox()
-        self.claude_llm_combo.setEditable(True)
         self.claude_llm_combo.addItem("claude-5-sonnet", "claude-5-sonnet")
         self.claude_llm_combo.addItem("claude-5-opus", "claude-5-opus")
         self.claude_llm_combo.addItem("claude-4.5-haiku", "claude-4.5-haiku")
@@ -278,7 +265,6 @@ class SettingsDialog(QDialog):
 
         # Codex Model
         self.codex_llm_combo = QComboBox()
-        self.codex_llm_combo.setEditable(True)
         self.codex_llm_combo.addItem("Varsayılan (Codex Ayarları)", "")
         self.codex_llm_combo.addItem("gpt-5.6-luna", "gpt-5.6-luna")
         self.codex_llm_combo.addItem("gpt-5.5", "gpt-5.5")
@@ -289,7 +275,6 @@ class SettingsDialog(QDialog):
         
         # Antigravity Model
         self.agy_llm_combo = QComboBox()
-        self.agy_llm_combo.setEditable(True)
         self.agy_llm_combo.addItem("Varsayılan (Antigravity Ayarları)", "")
         self.agy_llm_combo.addItem("Gemini 3.8 Flash (High)", "gemini-3.8-flash-high")
         self.agy_llm_combo.addItem("Gemini 3.8 Flash (Medium)", "gemini-3.8-flash-medium")
@@ -440,13 +425,6 @@ class SettingsDialog(QDialog):
         btn_layout.addStretch()
         btn_layout.addWidget(self.cancel_btn)
         btn_layout.addWidget(self.save_btn)
-        
-        # Apply the click filter to all editable comboboxes
-        for combo in (self.gemini_model_combo, self.openai_llm_combo, self.claude_llm_combo, self.codex_llm_combo, self.agy_llm_combo):
-            filter_obj = ComboClickFilter(combo)
-            setattr(combo, "_click_filter", filter_obj)
-            combo.lineEdit().installEventFilter(filter_obj)
-            
         main_layout.addLayout(btn_layout)
 
     def _on_provider_changed(self) -> None:
@@ -537,19 +515,29 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self.provider_combo.setCurrentIndex(idx)
 
-        self.gemini_key_edit.setText(self.config.get("gemini_api_key", ""))
-        self.gemini_model_combo.setCurrentText(self.config.get("gemini_model", DEFAULT_GEMINI_MODEL))
-        self.groq_key_edit.setText(self.config.get("groq_api_key", ""))
+        def _set_combo(combo: QComboBox, value: str):
+            if not value:
+                idx = combo.findData("")
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+                return
+            idx = combo.findData(value)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            else:
+                combo.addItem(value, value)
+                combo.setCurrentIndex(combo.count() - 1)
 
+        self.gemini_key_edit.setText(self.config.get("gemini_api_key", ""))
+        _set_combo(self.gemini_model_combo, self.config.get("gemini_model", DEFAULT_GEMINI_MODEL))
+        
+        self.groq_key_edit.setText(self.config.get("groq_api_key", ""))
         stt_model = self.config.get("groq_stt_model", "whisper-large-v3-turbo")
         stt_idx = self.groq_stt_combo.findData(stt_model)
         if stt_idx >= 0:
             self.groq_stt_combo.setCurrentIndex(stt_idx)
 
-        llm_model = self.config.get("groq_llm_model", "qwen/qwen3.8-27b")
-        llm_idx = self.groq_llm_combo.findData(llm_model)
-        if llm_idx >= 0:
-            self.groq_llm_combo.setCurrentIndex(llm_idx)
+        _set_combo(self.groq_llm_combo, self.config.get("groq_llm_model", "qwen/qwen3.8-27b"))
             
         self.openai_key_edit.setText(self.config.get("openai_api_key", ""))
         openai_stt = self.config.get("openai_stt_model", "whisper-1")
@@ -557,16 +545,9 @@ class SettingsDialog(QDialog):
         if o_stt_idx >= 0:
             self.openai_stt_combo.setCurrentIndex(o_stt_idx)
             
-        self.openai_llm_combo.setCurrentText(self.config.get("openai_llm_model", "gpt-4o-mini"))
+        _set_combo(self.openai_llm_combo, self.config.get("openai_llm_model", "gpt-4o-mini"))
         
         self.anthropic_key_edit.setText(self.config.get("anthropic_api_key", ""))
-        def _set_combo(combo: QComboBox, value: str):
-            idx = combo.findData(value)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-            else:
-                combo.setCurrentText(value)
-                
         _set_combo(self.claude_llm_combo, self.config.get("claude_llm_model", "claude-5-sonnet"))
         _set_combo(self.codex_llm_combo, self.config.get("codex_model", ""))
         _set_combo(self.agy_llm_combo, self.config.get("agy_model", ""))
