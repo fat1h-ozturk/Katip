@@ -41,6 +41,7 @@ def test_update_checker_worker_emits_when_newer(tmp_path, monkeypatch):
 
 def test_open_url_handles_clean_env(monkeypatch):
     import os
+    import sys
     from katip.desktop import open_url
 
     called_cmd = []
@@ -49,6 +50,7 @@ def test_open_url_handles_clean_env(monkeypatch):
         mock_proc = Mock()
         return mock_proc
 
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr("subprocess.Popen", mock_popen)
     monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/" + cmd)
     monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
