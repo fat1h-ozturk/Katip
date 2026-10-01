@@ -39,15 +39,7 @@ QLineEdit, QComboBox, QTextEdit {
 QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
     border: 1px solid #71717a;
 }
-QComboBox::drop-down {
-    border: none;
-    width: 30px;
-}
-QComboBox::down-arrow {
-    image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
-    width: 16px;
-    height: 16px;
-}
+
 QComboBox QAbstractItemView {
     background-color: #18181b;
     border: 1px solid #3f3f46;
