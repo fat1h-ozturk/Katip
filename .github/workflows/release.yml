@@ -34,6 +34,9 @@ jobs:
           - label: Fedora Linux x86_64
             runner: ubuntu-24.04
             asset: Katip-Fedora-x86_64.rpm
+          - label: Arch Linux x86_64
+            runner: ubuntu-24.04
+            asset: Katip-ArchLinux-x86_64.pkg.tar.zst
 
     steps:
       - name: Check out tagged source
@@ -116,7 +119,7 @@ jobs:
           hdiutil create -volname Katip -srcfolder dmg-root -ov -format UDZO "dist/$RELEASE_ASSET"
 
       - name: Build Fedora RPM package
-        if: runner.os == 'Linux'
+        if: matrix.label == 'Fedora Linux x86_64'
         shell: bash
         env:
           RELEASE_ASSET: ${{ matrix.asset }}
@@ -131,6 +134,29 @@ jobs:
             --define "_sourcedir $(pwd)/rpmbuild/SOURCES" \
             --define "_version $VERSION"
           cp rpmbuild/RPMS/x86_64/*.rpm "dist/$RELEASE_ASSET"
+
+      - name: Build Arch Linux package
+        if: matrix.label == 'Arch Linux x86_64'
+        shell: bash
+        env:
+          RELEASE_ASSET: ${{ matrix.asset }}
+        run: |
+          python -m PyInstaller katip.spec --clean --noconfirm
+          dist/Katip --version
+          VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          
+          mkdir -p archbuild
+          cp -r dist assets katip.desktop packaging/arch/PKGBUILD archbuild/
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" archbuild/PKGBUILD
+          
+          docker run --rm -v $(pwd)/archbuild:/build archlinux:base-devel bash -c "
+            pacman -Syu --noconfirm &&
+            useradd -m builduser &&
+            chown -R builduser:builduser /build &&
+            su - builduser -c 'cd /build && makepkg -d'
+          "
+          cp archbuild/*.pkg.tar.zst "dist/$RELEASE_ASSET"
+
 
       # ASVS 5.3.2: release output paths come only from fixed, version-controlled matrix entries.
       - name: Upload release asset

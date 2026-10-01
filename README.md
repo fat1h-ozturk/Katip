@@ -13,6 +13,7 @@ Katip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; b
 | İşletim Sistemi | Paket | Kurulum Yöntemi |
 | :--- | :--- | :--- |
 | **Fedora Linux (x86_64)** | [Katip-Fedora-x86_64.rpm](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-Fedora-x86_64.rpm) | `sudo dnf install ./Katip-Fedora-x86_64.rpm` *(veya çift tıkla kur)* |
+| **Arch Linux (x86_64)** | [Katip-ArchLinux-x86_64.pkg.tar.zst](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-ArchLinux-x86_64.pkg.tar.zst) | `sudo pacman -U ./Katip-ArchLinux-x86_64.pkg.tar.zst` |
 | **Windows 10/11 (x64)** | [Katip-Windows-x64.exe](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-Windows-x64.exe) | İndirin ve doğrudan çift tıklayarak çalıştırın |
 | **macOS (Apple Silicon M1..M4)** | [Katip-macOS-arm64.dmg](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-arm64.dmg) | `.dmg` dosyasını açıp Applications klasörüne sürükleyin |
 | **macOS (Intel)** | [Katip-macOS-x64.dmg](https://github.com/fat1h-ozturk/Katip/releases/latest/download/Katip-macOS-x64.dmg) | `.dmg` dosyasını açıp Applications klasörüne sürükleyin |

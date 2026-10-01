@@ -1,0 +1,15 @@
+pkgname=katip
+pkgver=0.4.5
+pkgrel=1
+pkgdesc="Ultra-fast AI voice dictation desktop assistant"
+arch=('x86_64')
+url="https://github.com/fat1h-ozturk/Katip"
+license=('MIT')
+options=('!strip' '!debug')
+
+package() {
+    install -Dm755 "${startdir}/dist/Katip" "${pkgdir}/usr/bin/katip"
+    install -Dm644 "${startdir}/katip.desktop" "${pkgdir}/usr/share/applications/katip.desktop"
+    install -Dm644 "${startdir}/assets/katip.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/katip.svg"
+    install -Dm644 "${startdir}/assets/katip-256.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/katip.png"
+}
