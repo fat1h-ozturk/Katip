@@ -130,7 +130,7 @@ class ComboClickFilter(QObject):
         super().__init__(combo)
         self.combo = combo
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.MouseButtonPress:
+        if event.type() == QEvent.Type.MouseButtonRelease:
             self.combo.showPopup()
         return super().eventFilter(obj, event)
 
