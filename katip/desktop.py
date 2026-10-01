@@ -128,6 +128,13 @@ def _generate_desktop_entry_content() -> str:
     launcher = get_launcher_path()
     project_root = get_project_root()
     command = " ".join([f'"{launcher}"', *_launcher_args(launcher)])
+
+    path_line = ""
+    if not getattr(sys, "frozen", False):
+        path_line = f"Path={project_root}\n"
+    elif not str(launcher).startswith(("/usr/bin", "/usr/local/bin")):
+        path_line = f"Path={launcher.parent}\n"
+
     return f"""[Desktop Entry]
 Name=Katip
 GenericName=Sesli Dikte Asistanı
@@ -135,8 +142,7 @@ GenericName[en]=Voice Dictation Assistant
 Comment=Wispr Flow & SuperWhisper alternatifi ultra hızlı sesli dikte
 Comment[en]=Ultra-fast AI voice dictation desktop assistant
 Exec={command} %U
-Path={project_root}
-Icon=katip
+{path_line}Icon=katip
 Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;
@@ -433,7 +439,15 @@ def is_desktop_installed() -> bool:
     elif sys.platform.startswith("darwin"):
         return _get_mac_app_path().exists()
     else:
-        return _get_linux_desktop_path().exists()
+        if _get_linux_desktop_path().exists():
+            return True
+        for sys_path in (
+            Path("/usr/share/applications/katip.desktop"),
+            Path("/usr/local/share/applications/katip.desktop"),
+        ):
+            if sys_path.exists():
+                return True
+        return False
 
 def is_autostart_enabled() -> bool:
     """Checks if Katip is configured to start on user login."""
@@ -597,6 +611,23 @@ def ensure_desktop_installed() -> None:
     This ensures that when a user runs the app, it immediately becomes discoverable
     in their Application Search / Start Menu.
     """
+    if sys.platform.startswith("linux"):
+        # 1. Clean up stale/broken local desktop entry with transient /tmp/_MEI paths if present
+        user_desktop = _get_linux_desktop_path()
+        if user_desktop.exists():
+            try:
+                content = user_desktop.read_text(encoding="utf-8")
+                if "Path=/tmp/_MEI" in content:
+                    user_desktop.unlink()
+                    _refresh_linux_desktop_database()
+            except Exception:
+                pass
+
+        # 2. If binary is installed system-wide (e.g. via RPM), do not shadow it with a user-local entry
+        launcher = get_launcher_path()
+        if str(launcher).startswith(("/usr/bin", "/usr/local/bin")):
+            return
+
     # ASVS 5.3.2: do not persist a launcher path derived from a temporary DMG mount.
     # The packaged macOS app is installed by dragging it into Applications.
     if sys.platform.startswith("darwin") and getattr(sys, "frozen", False):
