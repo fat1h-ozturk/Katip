@@ -41,6 +41,10 @@ elif sys.platform == "darwin":
         "pynput.keyboard._darwin",
         "pynput.mouse._darwin",
     ]
+elif sys.platform.startswith("linux"):
+    hiddenimports += [
+        "evdev",
+    ]
 
 a = Analysis(
     [str(project_root / "run_katip.py")],
