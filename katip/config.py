@@ -105,7 +105,7 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("Özel kelimeler metin olmalıdır.")
         if key == "vocabulary_aliases":
             value = normalize_vocabulary_aliases(value)
-        if key.endswith("_model") and not re.fullmatch(r"[A-Za-z0-9._/-]+", value):
+        if key.endswith("_model") and not re.fullmatch(r"[A-Za-z0-9._/-]*", value):
             raise ValueError(f"Geçersiz model adı: {key}")
         if key == "gemini_model" and value.startswith(("gemini-1.5-", "gemini-2.0-")):
             value = DEFAULT_GEMINI_MODEL
