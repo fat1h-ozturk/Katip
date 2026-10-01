@@ -51,3 +51,28 @@ def test_codex_jsonl_response_and_safe_command(failure, platform, monkeypatch):
         assert result.text == "Original transcript."
         assert result.warning
         assert "private" not in result.warning
+
+
+def test_find_codex_binary_in_path():
+    from katip.services.codex import _find_codex_binary
+    with patch("katip.services.codex.shutil.which", return_value="/custom/bin/codex"):
+        assert _find_codex_binary() == "/custom/bin/codex"
+
+
+def test_find_codex_binary_fallback_local_bin(tmp_path):
+    from katip.services.codex import _find_codex_binary
+    fake_codex = tmp_path / "codex"
+    fake_codex.write_text("#!/bin/sh\nexit 0")
+    fake_codex.chmod(0o755)
+
+    with patch("katip.services.codex.shutil.which", return_value=None), \
+         patch("katip.services.codex.os.path.expanduser", return_value=str(fake_codex)):
+        assert _find_codex_binary() == str(fake_codex)
+
+
+def test_find_codex_binary_not_found():
+    from katip.services.codex import _find_codex_binary
+    with patch("katip.services.codex.shutil.which", return_value=None), \
+         patch("katip.services.codex.os.path.isfile", return_value=False):
+        assert _find_codex_binary() == "codex"
+

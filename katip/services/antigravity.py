@@ -1,6 +1,9 @@
 import json
-import time
+import os
+import shutil
 import subprocess
+import sys
+import time
 from typing import Optional
 import requests
 
@@ -8,6 +11,62 @@ from ..prompts import build_groq_formatter_prompt
 
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 OPENAI_AUDIO_URL = "https://api.openai.com/v1/audio/transcriptions"
+
+
+def _find_agy_binary() -> str:
+    """Find the 'agy' executable, checking PATH and common user/system install locations."""
+    # 1. Standard PATH lookup
+    try:
+        found = shutil.which("agy")
+        if found:
+            return found
+    except Exception:
+        pass
+
+    # 2. Check common user and system local bin directories
+    candidates = [
+        os.path.expanduser("~/.local/bin/agy"),
+        os.path.expanduser("~/bin/agy"),
+        os.path.expanduser("~/.cargo/bin/agy"),
+        "/usr/local/bin/agy",
+        "/usr/bin/agy",
+        "/bin/agy",
+    ]
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            candidates.extend([
+                os.path.join(local_app_data, "Programs", "agy", "agy.exe"),
+                os.path.join(local_app_data, "agy", "agy.exe"),
+            ])
+        candidates.extend([
+            os.path.expanduser(r"~\AppData\Local\Programs\agy\agy.exe"),
+            os.path.expanduser(r"~/.local/bin/agy.exe"),
+        ])
+
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    # 3. Fallback search via shutil.which across common directories (handles PATHEXT etc.)
+    fallback_dirs = [
+        os.path.expanduser("~/.local/bin"),
+        os.path.expanduser("~/bin"),
+        os.path.expanduser("~/.cargo/bin"),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    search_path = os.pathsep.join(d for d in fallback_dirs if os.path.isdir(d))
+    if search_path:
+        try:
+            found_in_fallback = shutil.which("agy", path=search_path)
+            if found_in_fallback:
+                return found_in_fallback
+        except Exception:
+            pass
+
+    return "agy"
 
 class AntigravityResult:
     def __init__(self, raw_transcript: str, formatted_text: Optional[str], latency: float, warning: str = ""):
@@ -68,13 +127,28 @@ class AntigravityService:
         
         prompt = f"{sys_prompt}\n\n---\n\nCRITICAL: Respond ONLY with a valid JSON object. No markdown tags. Exact format: {{\"text\": \"formatted text here\"}}\n\nText to format:\n{json.dumps(user_data, ensure_ascii=False)}"
         
-        cmd = ["agy", "-p", prompt, "--new-project"]
+        agy_cmd = _find_agy_binary()
+        cmd = [agy_cmd, "-p", prompt, "--new-project"]
         
         if self.agy_model:
             cmd.extend(["--model", self.agy_model])
+
+        env = os.environ.copy()
+        user_local_bin = os.path.expanduser("~/.local/bin")
+        current_path = env.get("PATH", "")
+        if user_local_bin not in current_path.split(os.pathsep):
+            env["PATH"] = f"{user_local_bin}{os.pathsep}{current_path}" if current_path else user_local_bin
             
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                env=env,
+            )
         except FileNotFoundError:
             return AntigravityResult(raw_text, None, round(time.time() - start_time, 2), "Sistemde 'agy' komutu bulunamadı. Antigravity CLI'ın yüklü olduğundan emin olun.")
         except subprocess.TimeoutExpired:

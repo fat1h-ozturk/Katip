@@ -1,7 +1,9 @@
 import json
-import time
+import os
+import shutil
 import subprocess
 import sys
+import time
 from typing import Optional
 import requests
 
@@ -9,6 +11,64 @@ from ..prompts import build_groq_formatter_prompt
 
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 OPENAI_AUDIO_URL = "https://api.openai.com/v1/audio/transcriptions"
+
+
+def _find_codex_binary() -> str:
+    """Find the 'codex' executable, checking PATH and common user/system install locations."""
+    # 1. Standard PATH lookup
+    try:
+        found = shutil.which("codex")
+        if found:
+            return found
+    except Exception:
+        pass
+
+    # 2. Check common user and system local bin directories
+    candidates = [
+        os.path.expanduser("~/.local/bin/codex"),
+        os.path.expanduser("~/bin/codex"),
+        os.path.expanduser("~/.cargo/bin/codex"),
+        "/usr/local/bin/codex",
+        "/usr/bin/codex",
+        "/bin/codex",
+    ]
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            candidates.extend([
+                os.path.join(local_app_data, "Programs", "Codex", "codex.exe"),
+                os.path.join(local_app_data, "Programs", "codex", "codex.exe"),
+                os.path.join(local_app_data, "codex", "codex.exe"),
+            ])
+        candidates.extend([
+            os.path.expanduser(r"~\AppData\Local\Programs\Codex\codex.exe"),
+            os.path.expanduser(r"~/.local/bin/codex.exe"),
+        ])
+
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    # 3. Fallback search via shutil.which across common directories (handles PATHEXT etc.)
+    fallback_dirs = [
+        os.path.expanduser("~/.local/bin"),
+        os.path.expanduser("~/bin"),
+        os.path.expanduser("~/.cargo/bin"),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    search_path = os.pathsep.join(d for d in fallback_dirs if os.path.isdir(d))
+    if search_path:
+        try:
+            found_in_fallback = shutil.which("codex", path=search_path)
+            if found_in_fallback:
+                return found_in_fallback
+        except Exception:
+            pass
+
+    return "codex"
+
 
 class CodexResult:
     def __init__(self, raw_transcript: str, formatted_text: Optional[str], latency: float, warning: str = ""):
@@ -66,8 +126,9 @@ class CodexService:
                                 "vocabulary_aliases": vocabulary_aliases or {}}, ensure_ascii=False)
         prompt = f"{sys_prompt}\n\n---\n\nCRITICAL: Respond ONLY with a valid JSON object. Exact format: {{\"text\": \"formatted text here\"}}\n\nUser data:\n{user_data}"
         
+        codex_cmd = _find_codex_binary()
         cmd = [
-            "codex", "exec", 
+            codex_cmd, "exec", 
             "-c", 'sandbox_mode="read-only"',
             "-c", 'approval_policy="never"',
             "--skip-git-repo-check",
@@ -77,11 +138,24 @@ class CodexService:
             cmd.extend(["-m", self.codex_model])
             
         cmd.append(prompt)
+
+        env = os.environ.copy()
+        user_local_bin = os.path.expanduser("~/.local/bin")
+        current_path = env.get("PATH", "")
+        if user_local_bin not in current_path.split(os.pathsep):
+            env["PATH"] = f"{user_local_bin}{os.pathsep}{current_path}" if current_path else user_local_bin
         
         try:
             # ASVS 1.2.5: pass arguments without a shell; decode CLI output as UTF-8.
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout,
-                                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                env=env,
+            )
         except FileNotFoundError:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Sistemde 'codex' komutu bulunamadı. Lütfen Codex Desktop'ın yüklü olduğundan ve PATH'te olduğundan emin olun.")
         except subprocess.TimeoutExpired:
