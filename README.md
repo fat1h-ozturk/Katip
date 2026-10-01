@@ -111,6 +111,23 @@ Her işletim sisteminde `katip --toggle` komutu çalışır durumda olan uygulam
 
 ---
 
+## 🗑️ Nasıl Kaldırılır (Uninstall)
+
+Uygulamayı sistemden ve menülerden tamamen kaldırmak isterseniz:
+
+1. **Önce Sistem Kayıtlarını Temizleyin:**
+   Kısayolları, otomatik başlatma ayarlarını ve (API anahtarlarınız dahil) tüm yapılandırmaları silmek için terminalde (veya Komut İsteminde) uygulamanın dizininde şu komutu çalıştırın:
+   ```bash
+   katip --purge
+   ```
+
+2. **Uygulama Dosyasını Silin:**
+   * **Fedora:** `sudo dnf remove katip`
+   * **Arch Linux:** `sudo pacman -R katip`
+   * **Windows / macOS / Diğer:** İndirmiş olduğunuz `Katip.exe`, `Katip.app` veya çalıştırılabilir dosyayı doğrudan silebilirsiniz.
+
+---
+
 ## 📄 Lisans
 
 Bu proje **MIT Lisansı** ile lisanslanmıştır.
