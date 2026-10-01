@@ -624,3 +624,51 @@ def purge_all(remove_config: bool = True) -> bool:
             print(f"[Desktop] Error removing config dir: {e}")
             success = False
     return success
+
+def open_url(url: str) -> bool:
+    """
+    Safely opens a URL in the user's default browser across Linux, macOS, and Windows.
+    Specifically handles PyInstaller's LD_LIBRARY_PATH contamination on Linux,
+    which otherwise breaks xdg-open / browser launching.
+    """
+    import webbrowser
+
+    # 1. On Linux: PyInstaller sets LD_LIBRARY_PATH, breaking child processes like browsers
+    if sys.platform.startswith("linux"):
+        clean_env = os.environ.copy()
+        if "LD_LIBRARY_PATH_ORIG" in clean_env:
+            clean_env["LD_LIBRARY_PATH"] = clean_env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            clean_env.pop("LD_LIBRARY_PATH", None)
+
+        for opener in ("xdg-open", "gio"):
+            if shutil.which(opener):
+                try:
+                    cmd = [opener, url] if opener == "xdg-open" else ["gio", "open", url]
+                    subprocess.Popen(
+                        cmd,
+                        env=clean_env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    return True
+                except Exception:
+                    pass
+
+    # 2. Try python standard webbrowser module
+    try:
+        if webbrowser.open(url):
+            return True
+    except Exception:
+        pass
+
+    # 3. Fallback to Qt QDesktopServices
+    try:
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        return QDesktopServices.openUrl(QUrl(url))
+    except Exception:
+        pass
+
+    return False

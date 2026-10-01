@@ -3,8 +3,9 @@ Floating Toast Notification for Updates in Katip.
 Renders a modern, non-intrusive notification in the top-right corner of the screen.
 """
 
+import sys
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ..desktop import open_url
 
 
 class UpdateNotificationToast(QWidget):
@@ -25,10 +27,8 @@ class UpdateNotificationToast(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
         self.setStyleSheet("""
             QWidget#toastCard {
@@ -99,7 +99,14 @@ class UpdateNotificationToast(QWidget):
         card_layout.addLayout(header_layout)
 
         # Body row
-        body_lbl = QLabel("Güncellemek için yeni .exe / .dmg dosyasını kurun.")
+        if sys.platform.startswith("linux"):
+            body_text = "Güncellemek için yeni .rpm paketini kurun."
+        elif sys.platform == "darwin":
+            body_text = "Güncellemek için yeni .dmg paketini kurun."
+        else:
+            body_text = "Güncellemek için yeni .exe dosyasını kurun."
+
+        body_lbl = QLabel(body_text)
         body_lbl.setObjectName("toastBody")
         body_lbl.setWordWrap(True)
         card_layout.addWidget(body_lbl)
@@ -138,5 +145,5 @@ class UpdateNotificationToast(QWidget):
 
     def _on_download_clicked(self) -> None:
         if self.release_url:
-            QDesktopServices.openUrl(QUrl(self.release_url))
+            open_url(self.release_url)
         self.close()

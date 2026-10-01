@@ -507,7 +507,8 @@ class KatipApp:
             12000,
         )
         try:
-            self.tray.messageClicked.connect(lambda: QDesktopServices.openUrl(QUrl(release_url)))
+            from .desktop import open_url
+            self.tray.messageClicked.connect(lambda: open_url(release_url))
         except Exception:
             pass
 
