@@ -37,74 +37,7 @@ from ..desktop import (
     uninstall_desktop_entry,
 )
 
-DARK_STYLE = """
-QDialog {
-    background-color: #18181b;
-    color: #f4f4f5;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-}
-QGroupBox {
-    border: 1px solid #27272a;
-    border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 14px;
-    font-weight: bold;
-    color: #e4e4e7;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 4px;
-}
-QLabel {
-    color: #a1a1aa;
-    font-size: 13px;
-}
-QLineEdit, QComboBox, QTextEdit {
-    background-color: #27272a;
-    border: 1px solid #3f3f46;
-    border-radius: 6px;
-    padding: 6px 10px;
-    color: #fafafa;
-    font-size: 13px;
-}
-QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
-    border: 1px solid #6366f1;
-}
-QComboBox QAbstractItemView {
-    background-color: #27272a;
-    border: 1px solid #3f3f46;
-    selection-background-color: #4f46e5;
-    selection-color: #ffffff;
-    outline: none;
-}
-QAbstractItemView::item {
-    min-height: 28px;
-    padding: 4px 8px;
-}
-QPushButton {
-    background-color: #3f3f46;
-    color: #f4f4f5;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-weight: 500;
-}
-QPushButton:hover {
-    background-color: #52525b;
-}
-QPushButton#primaryBtn {
-    background-color: #4f46e5;
-    color: #ffffff;
-}
-QPushButton#primaryBtn:hover {
-    background-color: #4338ca;
-}
-QCheckBox {
-    color: #d4d4d8;
-    spacing: 8px;
-}
-"""
+from .styles import MINIMAL_DARK_STYLE
 
 
 def parse_vocabulary_aliases(text: str) -> dict[str, str]:
@@ -135,7 +68,7 @@ class SettingsDialog(QDialog):
         self.can_edit = can_edit or (lambda: True)
         self.setWindowTitle("Katip Ayarları")
         self.resize(540, 650)
-        self.setStyleSheet(DARK_STYLE)
+        self.setStyleSheet(MINIMAL_DARK_STYLE)
 
         self._build_ui()
         self._load_values()

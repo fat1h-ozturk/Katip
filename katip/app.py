@@ -26,6 +26,7 @@ from .sound import SoundPlayer
 from .ui.overlay_controller import LayerOverlayController
 from .ui.pill import FloatingPill
 from .ui.settings import SettingsDialog
+from .ui.styles import MINIMAL_DARK_STYLE
 from .ui.tray import TrayIcon
 
 class WorkerSignals(QObject):
@@ -489,6 +490,7 @@ class KatipApp:
         dialog = QDialog()
         dialog.setWindowTitle("Katip — Son Sonuç")
         dialog.resize(700, 480)
+        dialog.setStyleSheet(MINIMAL_DARK_STYLE)
         layout = QVBoxLayout(dialog)
         label = QLabel(self.last_error or "Son kayıt yalnız uygulama açıkken bellekte tutulur.")
         label.setTextFormat(Qt.TextFormat.PlainText)

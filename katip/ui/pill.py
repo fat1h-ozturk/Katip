@@ -197,47 +197,39 @@ class FloatingPill(QWidget):
         rect = QRectF(4, 4, self.width() - 8, self.height() - 8)
         radius = rect.height() / 2.0
 
-        # Draw soft shadow inside widget bounds
-        shadow_rect = QRectF(4, 6, self.width() - 8, self.height() - 8)
-        shadow_path = QPainterPath()
-        shadow_path.addRoundedRect(shadow_rect, radius, radius)
-        painter.fillPath(shadow_path, QBrush(QColor(0, 0, 0, 90)))
-
         # Draw Background Capsule
         bg_path = QPainterPath()
         bg_path.addRoundedRect(rect, radius, radius)
 
-        # Dark glass gradient
-        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        grad.setColorAt(0.0, QColor(24, 24, 28, 235))
-        grad.setColorAt(1.0, QColor(14, 14, 18, 245))
-        painter.fillPath(bg_path, QBrush(grad))
+        # Solid dark zinc flat background
+        painter.fillPath(bg_path, QBrush(QColor(24, 24, 27, 245))) # Zinc-900
 
         # Glowing border based on state
         if self.state == "recording":
-            border_color = QColor(239, 68, 68, 180)  # Red glow
+            border_color = QColor(239, 68, 68, 200)  # Flat Red
         elif self.state == "processing":
             pulse = (math.sin(self._tick_counter * 0.15) + 1.0) / 2.0
-            border_color = QColor(59, 130, 246, int(120 + pulse * 130))  # Pulsing Blue
+            border_color = QColor(99, 102, 241, int(150 + pulse * 105))  # Indigo 500 pulsing
         elif self.state == "success":
-            border_color = QColor(16, 185, 129, 200)  # Emerald green
+            border_color = QColor(34, 197, 94, 200)  # Green 500
         elif self.state == "error":
             border_color = QColor(244, 63, 94, 200)  # Rose red
         else:
-            border_color = QColor(255, 255, 255, 40)
+            border_color = QColor(63, 63, 70, 255) # Zinc-700
 
-        border_pen = QPen(border_color, 1.2)
+        border_pen = QPen(border_color, 1.5)
         painter.strokePath(bg_path, border_pen)
 
         # Draw Mode Badge (Left side)
         mode_str = MODE_TITLES.get(self.mode, "DİKTE")
-        badge_rect = QRectF(rect.x() + 10, rect.y() + (rect.height() - 20) / 2.0, 52, 20)
+        badge_rect = QRectF(rect.x() + 8, rect.y() + (rect.height() - 22) / 2.0, 56, 22)
         badge_path = QPainterPath()
-        badge_path.addRoundedRect(badge_rect, 10, 10)
-        painter.fillPath(badge_path, QBrush(QColor(255, 255, 255, 22)))
+        badge_path.addRoundedRect(badge_rect, 4, 4)
+        painter.fillPath(badge_path, QBrush(QColor(63, 63, 70, 100))) # Zinc-700 with opacity
 
-        painter.setPen(QColor(200, 200, 210))
-        badge_font = QFont("Sans-Serif", 7, QFont.Weight.Bold)
+        painter.setPen(QColor(244, 244, 245)) # Zinc-100
+        badge_font = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        badge_font.setFamilies(["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Inter", "Roboto", "sans-serif"])
         painter.setFont(badge_font)
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, mode_str)
 

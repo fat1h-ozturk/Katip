@@ -67,15 +67,17 @@ class TrayIcon(QSystemTrayIcon):
         self.menu = QMenu()
         self.menu.setStyleSheet("""
             QMenu {
-                background-color: #18181b;
+                background-color: #09090b;
                 color: #f4f4f5;
                 border: 1px solid #27272a;
-                border-radius: 6px;
+                border-radius: 2px;
                 padding: 4px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+                font-size: 13px;
             }
             QMenu::item {
                 padding: 6px 20px;
-                border-radius: 4px;
+                border-radius: 2px;
             }
             QMenu::item:selected {
                 background-color: #3f3f46;
