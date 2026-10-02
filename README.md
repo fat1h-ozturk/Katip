@@ -126,8 +126,4 @@ Uygulamayı sistemden ve menülerden tamamen kaldırmak isterseniz:
    * **Arch Linux:** `sudo pacman -R katip`
    * **Windows / macOS / Diğer:** İndirmiş olduğunuz `Katip.exe`, `Katip.app` veya çalıştırılabilir dosyayı doğrudan silebilirsiniz.
 
----
 
-## 📄 Lisans
-
-Bu proje **MIT Lisansı** ile lisanslanmıştır.
