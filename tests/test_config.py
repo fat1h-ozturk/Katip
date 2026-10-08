@@ -11,7 +11,7 @@ def test_config_defaults():
         mgr = ConfigManager(config_file=cfg_path)
         assert mgr.get("provider") == "gemini"
         assert mgr.get("mode") == "dictation"
-        assert "Katip" in mgr.get("custom_vocabulary")
+        assert "Kâtip" in mgr.get("custom_vocabulary")
         assert mgr.get("vocabulary_aliases") == {}
 
 def test_config_save_load():

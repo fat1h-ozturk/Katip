@@ -1,6 +1,6 @@
-# 🎙️ Katip
+# 🎙️ Kâtip
 
-**Katip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
+**Kâtip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
 
 Mikrofonunuzdan konuşmanızı dinler; anlamı koruyarak gereksiz konuşma dolgularını ve dilbilgisi hatalarını düzenler. Aktif pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları vb.) doğrudan yazar.
 
@@ -8,7 +8,7 @@ Mikrofonunuzdan konuşmanızı dinler; anlamı koruyarak gereksiz konuşma dolgu
 
 ## 📥 Hazır Paketleri İndir
 
-Katip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; bilgisayarınıza Python veya harici kütüphane yüklemenize gerek yoktur.
+Kâtip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; bilgisayarınıza Python veya harici kütüphane yüklemenize gerek yoktur.
 
 | İşletim Sistemi | Paket | Kurulum Yöntemi |
 | :--- | :--- | :--- |
@@ -52,9 +52,9 @@ Katip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; b
 ## 🚀 Kullanım Adımları
 
 1. **Uygulamayı Başlatın:**
-   - İndirdiğiniz uygulamayı çalıştırın. Görev çubuğunda (sistem tepsisinde) Katip mikrofon simgesi belirecektir.
+   - İndirdiğiniz uygulamayı çalıştırın. Görev çubuğunda (sistem tepsisinde) Kâtip mikrofon simgesi belirecektir.
 2. **API Anahtarını Girin:**
-   - Görev çubuğundaki Katip simgesine **sol tıklayın**; Ayarlar penceresi doğrudan açılacaktır.
+   - Görev çubuğundaki Kâtip simgesine **sol tıklayın**; Ayarlar penceresi doğrudan açılacaktır.
    - Kullanmak istediğiniz sağlayıcıyı seçin ve API anahtarınızı girip **Kaydet**'e basın.
 3. **Dikteyi Başlatın:**
    - Herhangi bir uygulamadaki metin kutusuna (VS Code, Not Defteri, Word, tarayıcı, Slack vb.) tıklayın.
@@ -68,7 +68,7 @@ Katip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; b
 
 ## 🛠️ Geliştiriciler İçin (Kaynak Koddan Çalıştırma)
 
-Katip üzerinde geliştirme yapmak veya kaynak koddan çalıştırmak isterseniz:
+Kâtip üzerinde geliştirme yapmak veya kaynak koddan çalıştırmak isterseniz:
 
 ### 1. Depoyu Klonlayın
 ```bash

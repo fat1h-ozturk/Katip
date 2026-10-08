@@ -99,14 +99,14 @@ if sys.platform == "darwin":
         bundle_identifier="com.talktowrite.katip",
         version=__version__,
         info_plist={
-            "CFBundleDisplayName": "Katip",
+            "CFBundleDisplayName": "Kâtip",
             "LSUIElement": True,
             "NSPrincipalClass": "NSApplication",
             "NSMicrophoneUsageDescription": (
-                "Katip records audio when you start dictation."
+                "Kâtip records audio when you start dictation."
             ),
             "NSAppleEventsUsageDescription": (
-                "Katip uses a paste shortcut to insert dictated text into the active app."
+                "Kâtip uses a paste shortcut to insert dictated text into the active app."
             ),
         },
     )

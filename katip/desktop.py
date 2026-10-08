@@ -136,7 +136,7 @@ def _generate_desktop_entry_content() -> str:
         path_line = f"Path={launcher.parent}\n"
 
     return f"""[Desktop Entry]
-Name=Katip
+Name=Kâtip
 GenericName=Sesli Dikte Asistanı
 GenericName[en]=Voice Dictation Assistant
 Comment=Wispr Flow & SuperWhisper alternatifi ultra hızlı sesli dikte
@@ -284,7 +284,7 @@ def _create_windows_shortcut(
     arguments: str = "",
     working_dir: Optional[Path] = None,
     icon_path: Optional[Path] = None,
-    description: str = "Katip"
+    description: str = "Kâtip"
 ) -> bool:
     """Creates a Windows .lnk shortcut using PowerShell."""
     shortcut_path.parent.mkdir(parents=True, exist_ok=True)
@@ -337,7 +337,7 @@ def _install_mac_app() -> bool:
             "    try\n"
             f'        do shell script "{applescript_access_check}"\n'
             "    on error errorMessage\n"
-            '        display dialog "macOS, Katip\'in Belgeler klasöründeki program dosyalarına erişmesini engelledi. Sistem Ayarları > Gizlilik ve Güvenlik > Dosyalar ve Klasörler bölümünde Katip için Belgeler klasörü erişimini açın ve tekrar deneyin. Ayrıntı: " & errorMessage buttons {"Tamam"} default button "Tamam"\n'
+            '        display dialog "macOS, Kâtip\'in Belgeler klasöründeki program dosyalarına erişmesini engelledi. Sistem Ayarları > Gizlilik ve Güvenlik > Dosyalar ve Klasörler bölümünde Kâtip için Belgeler klasörü erişimini açın ve tekrar deneyin. Ayrıntı: " & errorMessage buttons {"Tamam"} default button "Tamam"\n'
             "        return\n"
             "    end try\n"
             f'    do shell script "{applescript_command}"\n'
@@ -364,13 +364,13 @@ def _install_mac_app() -> bool:
                 metadata = plistlib.load(plist_file)
             metadata.update({
                 "CFBundleIdentifier": "com.talktowrite.app",
-                "CFBundleName": "Katip",
-                "CFBundleDisplayName": "Katip",
+                "CFBundleName": "Kâtip",
+                "CFBundleDisplayName": "Kâtip",
                 "LSUIElement": True,
                 "LSArchitecturePriority": ["arm64", "x86_64"],
                 "CFBundleIconFile": "Katip.icns",
                 "NSDocumentsFolderUsageDescription": (
-                    "Katip, klonladığınız proje klasöründeki uygulama dosyalarını "
+                    "Kâtip, klonladığınız proje klasöründeki uygulama dosyalarını "
                     "başlatmak için Belgeler klasörüne erişir."
                 ),
             })
@@ -482,7 +482,7 @@ def install_desktop_entry() -> bool:
                 arguments=args,
                 working_dir=root,
                 icon_path=ico,
-                description="Katip: Sesli Dikte Asistanı"
+                description="Kâtip: Sesli Dikte Asistanı"
             )
             # Also create a shortcut on user's Desktop for convenient 1-click access
             desktop_dir = _get_windows_desktop_dir()
@@ -494,7 +494,7 @@ def install_desktop_entry() -> bool:
                         arguments=args,
                         working_dir=root,
                         icon_path=ico,
-                        description="Katip: Sesli Dikte Asistanı"
+                        description="Kâtip: Sesli Dikte Asistanı"
                     )
                 except Exception:
                     pass
@@ -570,7 +570,7 @@ def set_autostart(enable: bool) -> bool:
                     arguments=args,
                     working_dir=root,
                     icon_path=ico,
-                    description="Katip: Sesli Dikte Asistanı"
+                    description="Kâtip: Sesli Dikte Asistanı"
                 )
             else:
                 if lnk_path.exists():
@@ -634,7 +634,7 @@ def ensure_desktop_installed() -> None:
         return
 
     if not is_desktop_installed():
-        print("[Desktop] İlk çalıştırma algılandı: Katip uygulama menüsüne kaydediliyor...")
+        print("[Desktop] İlk çalıştırma algılandı: Kâtip uygulama menüsüne kaydediliyor...")
         install_desktop_entry()
 
 def purge_all(remove_config: bool = True) -> bool:

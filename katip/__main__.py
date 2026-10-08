@@ -36,7 +36,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="katip",
-        description="Katip: Ultra-fast AI voice dictation desktop assistant."
+        description="Kâtip: Ultra-fast AI voice dictation desktop assistant."
     )
     parser.add_argument(
         "--toggle",
@@ -190,7 +190,7 @@ def main():
     if is_instance_running():
         open_running_settings()
         notify_running_instance()
-        print("[Katip] Katip zaten arka planda çalışıyor. Ayarlar penceresi açıldı.")
+        print("[Katip] Kâtip zaten arka planda çalışıyor. Ayarlar penceresi açıldı.")
         print("  Dikteyi başlatmak için kısayolunuzu (Ctrl+Alt+Space) veya '--toggle' komutunu kullanabilirsiniz.")
         sys.exit(0)
 
@@ -203,7 +203,7 @@ def main():
     # Launch GUI Application
     q_app = QApplication(sys.argv)
     q_app.setApplicationName("Katip")
-    q_app.setApplicationDisplayName("Katip")
+    q_app.setApplicationDisplayName("Kâtip")
     q_app.setQuitOnLastWindowClosed(False)
 
     # Set application icon
@@ -221,11 +221,11 @@ def main():
         if is_instance_running():
             open_running_settings()
         else:
-            QMessageBox.warning(None, "Katip Başlatılamadı", str(error))
+            QMessageBox.warning(None, "Kâtip Başlatılamadı", str(error))
         sys.exit(1)
 
     print("=" * 60)
-    print(f"🎙️  Katip v{__version__} Başlatıldı!")
+    print(f"🎙️  Kâtip v{__version__} Başlatıldı!")
     print(f"📌  Kısayol: {app.config.get('hotkey', 'Ctrl+Alt+Space')} (veya 'katip --toggle')")
     print("⚙️  Sistem çekmecesi (System Tray) üzerinden ayarlara ulaşabilirsiniz.")
     print("=" * 60)

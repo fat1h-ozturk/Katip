@@ -67,7 +67,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.can_edit = can_edit or (lambda: True)
-        self.setWindowTitle("Katip Ayarları")
+        self.setWindowTitle("Kâtip Ayarları")
         self.resize(750, 750)
         self.setStyleSheet(MINIMAL_DARK_STYLE)
 
@@ -83,7 +83,7 @@ class SettingsDialog(QDialog):
         main_layout.setSpacing(16)
 
         # Title
-        title_label = QLabel("⚡ Katip Ayarları")
+        title_label = QLabel("⚡ Kâtip Ayarları")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
         main_layout.addWidget(title_label)
 
@@ -284,7 +284,7 @@ class SettingsDialog(QDialog):
         vocab_info = QLabel("Sık kullandığınız isimler, teknik terimler ve kodlama kütüphaneleri (virgülle ayırın):")
         vocab_info.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         self.vocab_edit = QLineEdit()
-        self.vocab_edit.setPlaceholderText("Örn: Katip, Gemini, PySide6, Docker, Kubernetes, Fatih")
+        self.vocab_edit.setPlaceholderText("Örn: Kâtip, Gemini, PySide6, Docker, Kubernetes, Fatih")
         vocab_layout.addWidget(vocab_info)
         vocab_layout.addWidget(self.vocab_edit)
         self.aliases_edit = QTextEdit()
@@ -437,10 +437,10 @@ class SettingsDialog(QDialog):
     def _toggle_desktop_entry(self) -> None:
         if is_desktop_installed():
             success = uninstall_desktop_entry()
-            message = "Katip uygulama menüsünden kaldırıldı."
+            message = "Kâtip uygulama menüsünden kaldırıldı."
         else:
             success = install_desktop_entry()
-            message = "Katip uygulama menüsüne başarıyla kaydedildi!"
+            message = "Kâtip uygulama menüsüne başarıyla kaydedildi!"
         if success:
             QMessageBox.information(self, "Bilgi", message)
         else:
@@ -655,7 +655,7 @@ class SettingsDialog(QDialog):
         from ..injector import TextInjector
         injector = TextInjector(restore_clipboard=self.restore_clip_check.isChecked(),
                                 terminal_paste_mode=self.terminal_paste_check.isChecked())
-        test_text = "🎉 Katip başarıyla metin enjekte ediyor!"
+        test_text = "🎉 Kâtip başarıyla metin enjekte ediyor!"
         success = injector.inject_text(test_text)
         if success:
             QMessageBox.information(

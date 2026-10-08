@@ -121,7 +121,7 @@ class KatipApp:
             self.recorder.terminate()
             self.pill.close()
             self.tray.hide()
-            raise RuntimeError("Katip zaten çalışıyor veya uygulama iletişim kanalı açılamadı.")
+            raise RuntimeError("Kâtip zaten çalışıyor veya uygulama iletişim kanalı açılamadı.")
 
         # Lazy-initialized AI service singletons (avoids re-creating per request)
         self._gemini_service: Optional[GeminiService] = None
@@ -465,10 +465,10 @@ class KatipApp:
         self.last_error = "Metin hazır. Son Sonuç menüsünden kopyalayabilirsiniz."
         self.pill.hide_pill()
         self.sound.play("success")
-        self.tray.showMessage("Katip", self.last_error, QSystemTrayIcon.MessageIcon.Information, 6000)
+        self.tray.showMessage("Kâtip", self.last_error, QSystemTrayIcon.MessageIcon.Information, 6000)
 
     def _notify_recovery(self, message: str) -> None:
-        self.tray.showMessage("Katip", message, QSystemTrayIcon.MessageIcon.Warning, 6000)
+        self.tray.showMessage("Kâtip", message, QSystemTrayIcon.MessageIcon.Warning, 6000)
 
     def _check_for_updates(self) -> None:
         """Launches background thread to check for latest release."""
@@ -545,7 +545,7 @@ class KatipApp:
     def _build_result_dialog(self) -> QDialog:
         """Build the existing recovery window without starting a nested event loop."""
         dialog = QDialog()
-        dialog.setWindowTitle("Katip — Son Sonuç")
+        dialog.setWindowTitle("Kâtip — Son Sonuç")
         dialog.resize(700, 480)
         dialog.setStyleSheet(MINIMAL_DARK_STYLE)
         layout = QVBoxLayout(dialog)
@@ -724,7 +724,7 @@ class KatipApp:
     def _on_notify_running(self) -> None:
         hotkey = self.config.get("hotkey", "Ctrl+Alt+Space")
         self.tray.showMessage(
-            "Katip",
+            "Kâtip",
             f"Uygulama zaten arka planda çalışıyor.\n🎙️ Dikte Kısayolu: {hotkey}",
             QSystemTrayIcon.MessageIcon.Information,
             3500
@@ -787,7 +787,7 @@ class KatipApp:
             on_open_settings=lambda: self.signals.settings_received.emit()
         )
         if not self.hotkey_mgr.start():
-            self._notify_recovery("Kısayol iletişimi başlatılamadı. Katip'i yeniden açın.")
+            self._notify_recovery("Kısayol iletişimi başlatılamadı. Kâtip'i yeniden açın.")
 
     def _can_edit_settings(self) -> bool:
         return not (self.is_busy_processing or self.recorder.is_recording or self.recorder.has_pending_audio)

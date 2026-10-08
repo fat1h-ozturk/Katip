@@ -45,7 +45,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": "dictation",  # "dictation", "chat", "email", "prompt", "bullets"
     "hotkey": "Ctrl+Alt+Space",
     "trigger_mode": "toggle",  # "toggle" or "push_to_talk"
-    "custom_vocabulary": ["Katip", "Gemini", "PySide6", "Wayland"],
+    "custom_vocabulary": ["Kâtip", "Gemini", "PySide6", "Wayland"],
     "vocabulary_aliases": {},
     "sound_effects": True,
     "vad_mode": 2,  # 1: Low, 2: Medium, 3: High

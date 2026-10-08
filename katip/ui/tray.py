@@ -24,7 +24,7 @@ class TrayIcon(QSystemTrayIcon):
         self._build_menu()
 
         self.setIcon(self.icon_idle)
-        self.setToolTip("Katip (Hazır)")
+        self.setToolTip("Kâtip (Hazır)")
         self.activated.connect(self._on_activated)
 
     def _create_icons(self) -> None:
@@ -90,7 +90,7 @@ class TrayIcon(QSystemTrayIcon):
         """)
 
         # Status header
-        self.status_action = QAction("Katip: Hazır", self)
+        self.status_action = QAction("Kâtip: Hazır", self)
         self.status_action.setEnabled(False)
         self.menu.addAction(self.status_action)
 
@@ -155,13 +155,13 @@ class TrayIcon(QSystemTrayIcon):
         self.is_recording = recording
         if recording:
             self.setIcon(self.icon_recording)
-            self.setToolTip("Katip (Kayıt Yapılıyor...)")
+            self.setToolTip("Kâtip (Kayıt Yapılıyor...)")
             self.status_action.setText("Durum: Dinleniyor...")
             self.toggle_action.setText("⏹️ Kaydı Durdur")
         else:
             self.setIcon(self.icon_idle)
-            self.setToolTip("Katip (Hazır)")
-            self.status_action.setText("Katip: Hazır")
+            self.setToolTip("Kâtip (Hazır)")
+            self.status_action.setText("Kâtip: Hazır")
             self.toggle_action.setText("🎙️ Kaydı Başlat / Durdur")
 
     def set_active_mode(self, mode: str) -> None:

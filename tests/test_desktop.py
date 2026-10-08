@@ -57,7 +57,7 @@ def test_linux_icon_install_uses_asset_directory(tmp_path, monkeypatch):
 def test_desktop_entry_content():
     content = _generate_desktop_entry_content()
     assert "[Desktop Entry]" in content
-    assert "Name=Katip" in content
+    assert "Name=Kâtip" in content
     assert "Icon=katip" in content
     assert "Exec=" in content
     assert "Keywords=" in content
@@ -102,7 +102,7 @@ def test_desktop_install_uninstall_linux(tmp_path, monkeypatch):
 
         assert install_desktop_entry()
         assert fake_desktop.exists()
-        assert "Name=Katip" in fake_desktop.read_text()
+        assert "Name=Kâtip" in fake_desktop.read_text()
 
         assert uninstall_desktop_entry()
         assert not fake_desktop.exists()
