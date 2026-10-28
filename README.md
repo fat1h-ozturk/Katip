@@ -111,6 +111,36 @@ Her işletim sisteminde `katip --toggle` komutu çalışır durumda olan uygulam
 
 ---
 
+## 🐧 Linux: Kısayol, Yapıştırma ve Pencere Odağı
+
+KDE Plasma **Wayland** oturumunda Qt kayıt göstergesi, odak almama ipuçlarına
+rağmen terminalin veya metin alanının odağını alabilir. Kâtip, Qt göstergesini
+kullanırken kullanıcı hesabında yalnızca `Katip Recording Overlay` penceresine
+uygulanan bir KWin kuralını otomatik kaydeder. Gösterge görünür kalır, klavye
+odağını alamaz; ayarlar ve sonuç pencereleri bu kuralın dışındadır. Başlığa eklenen
+`— Kâtip` uygulama adı da eşleştirilir. Mevcut kişisel pencere kuralları korunur.
+Bu entegrasyon KDE'nin `kreadconfig6` / `kwriteconfig6` (veya Plasma 5 araçlarını)
+gerektirir; yönetici yetkisi istemez. Diğer masaüstleri bu KWin kuralını kullanmaz.
+
+Kısayol hiç algılanmıyorsa, Linux'taki doğrudan klavye dinleyicisinin giriş
+aygıtlarını okuma izni olmayabilir. `input` grubuna genel erişim vermek yerine,
+Sistem Ayarları → Kısayollar bölümünde `katip --toggle` komutuna bir kısayol
+atayabilirsiniz. Bu yöntem açık olan Kâtip örneğini tetikler ve klavyeye doğrudan
+erişim gerektirmez. Aynı tuş birleşimini iki dinleyicide birden kullanmayın.
+
+Wayland'da otomatik yapıştırma için `wl-copy` ve çalışan bir `ydotoold` gerekir.
+Fedora'da paketleri `sudo dnf install wl-clipboard ydotool` ile kurabilirsiniz.
+`ydotool` paketinin kurulu olması servisin çalıştığı anlamına gelmez; ayrıca
+istemcinin daemon soketine erişebilmesi gerekir. Fedora'da durumunu
+`systemctl status ydotool` ile kontrol edin. Soket yolu, sahipliği ve servis
+kurulumu dağıtıma göre değişebilir; uygulamayı root olarak çalıştırmayın.
+
+Terminalde Ctrl+Shift+V göndermek için **Terminal Uyumluluk Modu**nu açın.
+Normal metin alanları Ctrl+V bekliyorsa bu modu kapatın; Kâtip şu anda hedef
+uygulamaya göre yapıştırma tuşunu otomatik seçmez.
+
+---
+
 ## 🗑️ Nasıl Kaldırılır (Uninstall)
 
 Uygulamayı sistemden ve menülerden tamamen kaldırmak isterseniz:

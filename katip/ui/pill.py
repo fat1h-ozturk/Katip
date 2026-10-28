@@ -8,6 +8,7 @@ import sys
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
+from ..kde import OVERLAY_TITLE, ensure_overlay_rule
 
 MODE_TITLES = {
     "dictation": "DİKTE",
@@ -42,13 +43,18 @@ class FloatingPill(QWidget):
                 | Qt.WindowType.WindowDoesNotAcceptFocus
             )
         else:
+            # Use a managed tool window: a parentless Wayland tooltip may
+            # never be mapped. A stable title also allows compositor rules
+            # to distinguish this overlay from settings and result dialogs.
             flags = (
                 Qt.WindowType.FramelessWindowHint
                 | Qt.WindowType.WindowStaysOnTopHint
+                | Qt.WindowType.Tool
                 | Qt.WindowType.WindowDoesNotAcceptFocus
-                | Qt.WindowType.BypassWindowManagerHint
             )
         self.setWindowFlags(flags)
+        self.setWindowTitle(OVERLAY_TITLE)
+        ensure_overlay_rule()
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -112,10 +118,10 @@ class FloatingPill(QWidget):
         """Show the status pill without taking focus from the user's app."""
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.show()
-        # On macOS, raise_() can activate the Qt tool window even with
-        # WA_ShowWithoutActivating. WindowStaysOnTopHint keeps the pill visible
-        # without explicitly raising it over the frontmost application.
-        if sys.platform != "darwin":
+        # On macOS and Wayland, raising the overlay can disturb the active
+        # window. WindowStaysOnTopHint keeps it visible without an activation
+        # request. Windows also has the native WS_EX_NOACTIVATE style above.
+        if sys.platform.startswith("win"):
             self.raise_()
         self.repaint()
 

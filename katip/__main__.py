@@ -204,6 +204,8 @@ def main():
     q_app = QApplication(sys.argv)
     q_app.setApplicationName("Katip")
     q_app.setApplicationDisplayName("Kâtip")
+    # Stable Wayland app_id for the overlay's narrowly scoped KWin rule.
+    q_app.setDesktopFileName("katip")
     q_app.setQuitOnLastWindowClosed(False)
 
     # Set application icon
