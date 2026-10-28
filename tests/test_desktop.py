@@ -102,7 +102,7 @@ def test_desktop_install_uninstall_linux(tmp_path, monkeypatch):
 
         assert install_desktop_entry()
         assert fake_desktop.exists()
-        assert "Name=Kâtip" in fake_desktop.read_text()
+        assert "Name=Kâtip" in fake_desktop.read_text(encoding="utf-8")
 
         assert uninstall_desktop_entry()
         assert not fake_desktop.exists()
