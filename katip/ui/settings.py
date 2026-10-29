@@ -4,10 +4,10 @@ Allows configuring API keys, AI providers, models, hotkeys, and custom vocabular
 """
 
 from typing import Callable, Optional
-from contextlib import suppress
 import sys
+import threading
 import unicodedata
-from PySide6.QtCore import QTimer, Signal, QEvent, QObject
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..audio import get_input_devices
+from ..audio import AudioRecorder, get_input_devices
 from ..config import ConfigManager, DEFAULT_GEMINI_MODEL, normalize_vocabulary_aliases
 from ..prompts import build_whisper_prompt
 from .hotkey_recorder import HotkeyRecorderWidget
@@ -62,6 +62,9 @@ class SettingsDialog(QDialog):
     """Settings modal window for configuring Katip."""
 
     config_updated = Signal()
+    devices_ready = Signal(object)
+    mic_test_ready = Signal(str)
+    injection_test_ready = Signal(bool, str)
 
     def __init__(self, config: ConfigManager, parent=None, can_edit: Optional[Callable[[], bool]] = None):
         super().__init__(parent)
@@ -71,8 +74,14 @@ class SettingsDialog(QDialog):
         self.resize(750, 750)
         self.setStyleSheet(MINIMAL_DARK_STYLE)
 
+        self.devices_ready.connect(self._populate_devices)
+        self.mic_test_ready.connect(self._on_mic_test_ready)
+        self.injection_test_ready.connect(self._on_injection_test_ready)
+        self._injection_running = False
+        self._injection_target = None
         self._build_ui()
         self._load_values()
+        threading.Thread(target=self._load_devices_worker, daemon=True).start()
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._reset_save_btn)
@@ -132,7 +141,8 @@ class SettingsDialog(QDialog):
 
         # Gemini Model
         self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.addItems([DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite"])
+        for model in (DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite"):
+            self.gemini_model_combo.addItem(model, model)
         self.gemini_model_label = QLabel("Gemini Modeli:")
         ai_layout.addRow(self.gemini_model_label, self.gemini_model_combo)
 
@@ -218,7 +228,13 @@ class SettingsDialog(QDialog):
         ai_layout.addRow(self.agy_llm_label, self.agy_llm_combo)
 
         # STT Note for Claude, Codex, Antigravity
-        self.stt_note_label = QLabel("Not: Ses tanıma (STT) için ücretsiz Groq Whisper anahtarı kullanılır.")
+        self.stt_source_combo = QComboBox()
+        self.stt_source_combo.addItem("Otomatik (Groq anahtarı varsa Groq)", "auto")
+        self.stt_source_combo.addItem("Groq", "groq")
+        self.stt_source_combo.addItem("OpenAI", "openai")
+        self.stt_source_label = QLabel("Ses tanıma sağlayıcısı:")
+        ai_layout.addRow(self.stt_source_label, self.stt_source_combo)
+        self.stt_note_label = QLabel("Ses tanıma için seçili Groq veya OpenAI anahtarı gerekir.")
         self.stt_note_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         ai_layout.addRow("", self.stt_note_label)
 
@@ -255,9 +271,9 @@ class SettingsDialog(QDialog):
 
         self.mic_combo = QComboBox()
         self.mic_combo.addItem("Varsayılan Sistem Mikrofonu", -1)
-        for dev in get_input_devices():
-            dev_label = f"{dev['name']} {'(Varsayılan)' if dev.get('is_default') else ''}"
-            self.mic_combo.addItem(dev_label, dev["index"])
+        configured = self.config.get("input_device_index", -1)
+        if configured >= 0:
+            self.mic_combo.addItem("Seçili mikrofon (aygıtlar yükleniyor)", configured)
         audio_layout.addRow("Mikrofon:", self.mic_combo)
 
         self.vad_combo = QComboBox()
@@ -306,7 +322,7 @@ class SettingsDialog(QDialog):
         
         row1_layout = QHBoxLayout()
         self.sound_check = QCheckBox("Ses Geri Bildirimi (Bip sesleri)")
-        self.restore_clip_check = QCheckBox("Panoyu Eski Haline Getir")
+        self.restore_clip_check = QCheckBox("Panoyu geri yükle (sürüm takibi destekleniyorsa)")
         row1_layout.addWidget(self.sound_check)
         row1_layout.addWidget(self.restore_clip_check)
         
@@ -393,8 +409,8 @@ class SettingsDialog(QDialog):
         self.groq_llm_combo.setVisible(is_groq)
         
         # OpenAI (only show when OpenAI is the selected provider)
-        self.openai_key_label.setVisible(is_openai)
-        self.openai_key_edit.setVisible(is_openai)
+        self.openai_key_label.setVisible(is_openai or needs_stt_key)
+        self.openai_key_edit.setVisible(is_openai or needs_stt_key)
         self.openai_stt_label.setVisible(is_openai)
         self.openai_stt_combo.setVisible(is_openai)
         self.openai_llm_label.setVisible(is_openai)
@@ -416,6 +432,8 @@ class SettingsDialog(QDialog):
         
         # Note
         self.stt_note_label.setVisible(needs_stt_key)
+        self.stt_source_label.setVisible(needs_stt_key)
+        self.stt_source_combo.setVisible(needs_stt_key)
 
     def _toggle_key_visibility(self) -> None:
         if self.gemini_key_edit.echoMode() == QLineEdit.EchoMode.Password:
@@ -477,6 +495,7 @@ class SettingsDialog(QDialog):
 
         _set_combo(self.groq_llm_combo, self.config.get("groq_llm_model", "qwen/qwen3.8-27b"))
             
+        self.stt_source_combo.setCurrentIndex(max(0, self.stt_source_combo.findData(self.config.get("stt_provider", "auto"))))
         self.openai_key_edit.setText(self.config.get("openai_api_key", ""))
         openai_stt = self.config.get("openai_stt_model", "whisper-1")
         o_stt_idx = self.openai_stt_combo.findData(openai_stt)
@@ -543,6 +562,7 @@ class SettingsDialog(QDialog):
 
         values = {
             "provider": self.provider_combo.currentData(),
+            "stt_provider": self.stt_source_combo.currentData(),
             "gemini_api_key": self.gemini_key_edit.text().strip(),
             "gemini_model": self.gemini_model_combo.currentText().strip(),
             "groq_api_key": self.groq_key_edit.text().strip(),
@@ -598,71 +618,111 @@ class SettingsDialog(QDialog):
         self.save_btn.setText("Kaydet")
         self.save_btn.setStyleSheet("")
 
+    def _load_devices_worker(self):
+        devices = get_input_devices()
+        try:
+            self.devices_ready.emit(devices)
+        except RuntimeError:
+            pass  # The settings window was already destroyed.
+
+    def _populate_devices(self, devices):
+        selected = self.mic_combo.currentData()
+        self.mic_combo.clear()
+        self.mic_combo.addItem("Varsayılan Sistem Mikrofonu", -1)
+        for dev in devices:
+            self.mic_combo.addItem(dev["name"], dev["index"])
+        index = self.mic_combo.findData(selected)
+        if index < 0 and selected is not None and selected >= 0:
+            self.mic_combo.addItem("Seçili mikrofon (bağlı değil)", selected)
+            index = self.mic_combo.count() - 1
+        self.mic_combo.setCurrentIndex(max(0, index))
+
     def _test_microphone(self) -> None:
         if not self.can_edit():
             QMessageBox.warning(self, "Kayıt Devam Ediyor", "Mikrofon testi için önce mevcut kaydı bitirin.")
             return
-        import pyaudio, struct, math
-        dev_idx = self.mic_combo.currentData()
+        device = self.mic_combo.currentData()
         self.test_mic_btn.setEnabled(False)
-        self.mic_status_lbl.setText("Dinleniyor... Lütfen mikrofona konuşun...")
-        self.mic_status_lbl.setStyleSheet("color: #60a5fa; font-size: 11px; font-weight: bold;")
-        self.repaint()
+        self.save_btn.setEnabled(False)
+        self.mic_status_lbl.setText("Dinleniyor… Lütfen mikrofona konuşun.")
+        threading.Thread(target=self._mic_test_worker, args=(device,), daemon=True).start()
 
-        p = None
-        stream = None
+    def _mic_test_worker(self, device):
+        peak = [0.0]
+        recorder = None
         try:
-            p = pyaudio.PyAudio()
-            stream_kwargs = {
-                "format": pyaudio.paInt16,
-                "channels": 1,
-                "rate": 16000,
-                "input": True,
-                "frames_per_buffer": 1024
-            }
-            if dev_idx is not None and dev_idx >= 0:
-                stream_kwargs["input_device_index"] = dev_idx
-
-            stream = p.open(**stream_kwargs)
-            max_rms = 0.0
-            for _ in range(30):  # ~2 seconds
-                data = stream.read(1024, exception_on_overflow=False)
-                shorts = struct.unpack(f"{len(data)//2}h", data)
-                if shorts:
-                    sum_sq = sum(s * s for s in shorts)
-                    rms = math.sqrt(sum_sq / len(shorts)) / 32768.0
-                    if rms > max_rms:
-                        max_rms = rms
-            if max_rms > 0.0008:
-                self.mic_status_lbl.setText(f"✓ Ses başarıyla algılandı! (Seviye: {max_rms:.4f})")
-                self.mic_status_lbl.setStyleSheet("color: #4ade80; font-size: 11px; font-weight: bold;")
+            recorder = AudioRecorder(device_index=device, on_level_callback=lambda level: peak.__setitem__(0, max(peak[0], level)))
+            recorder.start_recording()
+            recorder._stop.wait(2)
+            recorder.terminate()
+            if recorder.last_error:
+                message = recorder.last_error
+            elif peak[0] > 0.0032:
+                message = "✓ Ses başarıyla algılandı."
             else:
-                self.mic_status_lbl.setText(f"⚠️ Ses çok kısık veya algılanamadı ({max_rms:.5f}). Mikrofonu/ses düzeyini kontrol edin.")
-                self.mic_status_lbl.setStyleSheet("color: #f87171; font-size: 11px; font-weight: bold;")
-        except Exception as e:
-            self.mic_status_lbl.setText(f"Mikrofon açılamadı: {e}")
-            self.mic_status_lbl.setStyleSheet("color: #f87171; font-size: 11px;")
+                message = "Ses çok kısık veya algılanamadı; mikrofonu kontrol edin."
+        except Exception:
+            message = "Mikrofon testi tamamlanamadı; bağlantı ve izinleri kontrol edin."
         finally:
-            if stream is not None:
-                with suppress(Exception):
-                    stream.close()
-            if p is not None:
-                with suppress(Exception):
-                    p.terminate()
-            self.test_mic_btn.setEnabled(True)
+            if recorder:
+                recorder.terminate()
+        try:
+            self.mic_test_ready.emit(message)
+        except RuntimeError:
+            pass
+
+    def _on_mic_test_ready(self, message):
+        self.mic_status_lbl.setText(message)
+        self.test_mic_btn.setEnabled(True)
+        self.save_btn.setEnabled(True)
 
     def _test_injection(self) -> None:
+        if self._injection_running or not self.can_edit():
+            return
         from ..injector import TextInjector
         injector = TextInjector(restore_clipboard=self.restore_clip_check.isChecked(),
                                 terminal_paste_mode=self.terminal_paste_check.isChecked())
-        test_text = "🎉 Kâtip başarıyla metin enjekte ediyor!"
-        success = injector.inject_text(test_text)
-        if success:
+        # An editable test field inside this dialog makes the destination explicit.
+        if self._injection_target is None:
+            self._injection_target = QLineEdit(self)
+            self._injection_target.setPlaceholderText("Yapıştırma testi hedefi")
+            self.layout().addWidget(self._injection_target)
+        target = self._injection_target
+        target.clear()
+        target.setFocus()
+        self._injection_running = True
+        self.test_paste_btn.setEnabled(False)
+        self.save_btn.setEnabled(False)
+        QTimer.singleShot(100, lambda: self._start_injection_test(injector))
+
+    def _start_injection_test(self, injector):
+        if not self.isActiveWindow() or not self._injection_target.hasFocus():
+            self._on_injection_test_ready(False, "Test hedefinin odağı değişti; yeniden deneyin.")
+            return
+        threading.Thread(target=self._injection_test_worker, args=(injector,), daemon=True).start()
+
+    def _injection_test_worker(self, injector):
+        try:
+            success = injector.inject_text("🎉 Kâtip metin denemesi")
+            error = injector.last_error if not success else ""
+        except Exception:
+            success, error = False, "Metin testi tamamlanamadı."
+        self.injection_test_ready.emit(success, error)
+
+    def _on_injection_test_ready(self, success, error):
+        # Give the desktop's synthetic key event time to reach the test field.
+        QTimer.singleShot(150, lambda: self._finish_injection_test(success, error))
+
+    def _finish_injection_test(self, success, error):
+        self._injection_running = False
+        self.test_paste_btn.setEnabled(True)
+        self.save_btn.setEnabled(True)
+        if self._injection_target.text() == "🎉 Kâtip metin denemesi":
             QMessageBox.information(
-                self,
-                "Test Başarılı",
-                "Metin panoya kopyalandı ve aktif pencereye yapıştırma simülasyonu gönderildi!"
+                self, "Test Başarılı", "Metin test alanına ulaştı ve doğrulandı."
             )
+        elif success:
+            QMessageBox.information(self, "Girdi Gönderildi", "Yapıştırma girdisi gönderildi; test alanına ulaşması doğrulanamadı.")
         else:
             if sys.platform == "darwin":
                 help_text = (
@@ -677,5 +737,15 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Test Uyarısı",
-                f"Metin eklenemedi: {injector.last_error}\n\n{help_text}"
+                f"Metin eklenemedi: {error}\n\n{help_text}"
             )
+
+    def closeEvent(self, event):
+        if self._injection_running:
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+    def reject(self):
+        if not self._injection_running:
+            super().reject()

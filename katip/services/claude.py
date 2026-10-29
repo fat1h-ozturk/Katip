@@ -1,24 +1,22 @@
-import json
 import time
-from typing import Optional, List, Dict
+from dataclasses import dataclass, replace
 import requests
+from ..infrastructure.http_transport import http_post
+from ..infrastructure.http_transport import HttpSession
 
-from ..prompts import build_groq_formatter_prompt
+from ..domain.errors import ProviderError, ConfigurationError
+from ..domain.models import DictationResult
+from .catalog import model_profile
+from .common import parse_output, formatter_input, publish_transcript, formatting_stage, start_stt, http_status_message
+from ..prompts import build_groq_formatter_prompt, build_whisper_prompt
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 OPENAI_AUDIO_URL = "https://api.openai.com/v1/audio/transcriptions"
 
-class ClaudeResult:
-    def __init__(self, raw_transcript: str, formatted_text: Optional[str], latency: float, warning: str = ""):
-        self.raw_transcript = raw_transcript
-        self.formatted_text = formatted_text
-        self.latency = latency
-        self.warning = warning
-
-    @property
-    def text(self) -> str:
-        return self.formatted_text if self.formatted_text is not None else self.raw_transcript
+@dataclass(frozen=True)
+class ClaudeResult(DictationResult):
+    provider: str = "claude"
 
 class ClaudeService:
     def __init__(self, api_key: str, llm_model: str = "claude-3-5-sonnet-20241022",
@@ -28,7 +26,7 @@ class ClaudeService:
         self.stt_provider = stt_provider
         self.stt_api_key = stt_api_key.strip() if stt_api_key else ""
         self.stt_model = stt_model
-        self._session = requests.Session()
+        self._session = HttpSession()
         self._session.headers.update({
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -36,17 +34,21 @@ class ClaudeService:
         })
 
     def transcribe_and_format(self, audio_bytes: bytes, mode="dictation", custom_vocabulary=None,
-                              language="auto", timeout=30, vocabulary_aliases=None) -> ClaudeResult:
+                              language="auto", timeout=90, vocabulary_aliases=None) -> ClaudeResult:
         if not self.api_key:
-            raise ValueError("Anthropic API anahtarı bulunamadı!")
+            raise ConfigurationError("Anthropic API anahtarı bulunamadı!")
         if not self.stt_api_key:
-            raise ValueError("Claude ile STT kullanabilmek için Groq veya OpenAI anahtarı gereklidir!")
+            raise ConfigurationError("Claude ile STT kullanabilmek için Groq veya OpenAI anahtarı gereklidir!")
             
         start_time = time.time()
         
+        start_stt(self, len(audio_bytes))
         # 1. Transcription (Whisper fallback via Groq or OpenAI)
         files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
         data = {"model": self.stt_model, "response_format": "text"}
+        prompt, omitted_stt = build_whisper_prompt(custom_vocabulary, vocabulary_aliases)
+        if prompt:
+            data["prompt"] = prompt
         if language and language != "auto":
             data["language"] = language
             
@@ -54,32 +56,55 @@ class ClaudeService:
         stt_url = GROQ_AUDIO_URL if self.stt_provider == "groq" else OPENAI_AUDIO_URL
             
         try:
-            stt_resp = requests.post(stt_url, files=files, data=data, headers=stt_headers, timeout=timeout)
+            stt_resp = http_post(stt_url, files=files, data=data, headers=stt_headers, timeout=timeout)
+        except requests.exceptions.Timeout:
+            raise ProviderError("NETWORK_TIMEOUT", "stt", "Ses tanıma zaman aşımı; ham kayıt korunuyor.") from None
         except requests.exceptions.RequestException:
-            raise RuntimeError(f"{self.stt_provider.upper()} STT bağlantı hatası.")
+            raise ProviderError("NETWORK_CONNECTION", "stt", f"{self.stt_provider.upper()} STT bağlantı hatası.")
             
         if stt_resp.status_code != 200:
-            raise RuntimeError(f"{self.stt_provider.upper()} STT API Hatası (HTTP {stt_resp.status_code})")
+            raise ProviderError("HTTP_ERROR", "stt", http_status_message(self.stt_provider.upper() + " STT", stt_resp))
             
         raw_text = stt_resp.text.strip()
         if not raw_text:
             return ClaudeResult("", None, round(time.time() - start_time, 2))
             
+        publish_transcript(self, raw_text, mode, custom_vocabulary, language, vocabulary_aliases)
+        result = self.format_transcript(raw_text, mode, custom_vocabulary, language,
+                                        vocabulary_aliases, timeout)
+        return replace(result, latency=round(time.time() - start_time, 2), omitted_stt_terms=omitted_stt)
+
+    @formatting_stage
+    def format_transcript(self, raw_text, mode="dictation", custom_vocabulary=None,
+                          language="auto", vocabulary_aliases=None, timeout=90, **_metadata):
+        start_time = time.time()
+        result = self._format(raw_text, mode, custom_vocabulary, language, vocabulary_aliases, timeout)
+        return replace(result, mode=mode, language=language,
+                       custom_vocabulary=tuple(custom_vocabulary or ()),
+                       vocabulary_aliases=tuple((vocabulary_aliases or {}).items()),
+                       stt_model=self.stt_model, llm_model=self.llm_model,
+                       latency=round(time.time() - start_time, 2))
+
+    def _format(self, raw_text, mode, custom_vocabulary, language, vocabulary_aliases, timeout):
+        start_time = time.time()
         # 2. Formatting (Claude)
-        # We need a system prompt. build_groq_formatter_prompt returns (prompt, omitted_count). 
-        # But we must ask Claude to output raw text or parse JSON. Anthropic supports tool calls or just JSON.
-        # We'll ask it to output ONLY valid JSON without markdown wrapping.
-        sys_prompt, omitted = build_groq_formatter_prompt(mode, custom_vocabulary or [], vocabulary_aliases or {})
+        sys_prompt = build_groq_formatter_prompt(mode)
+        profile = model_profile("claude", self.llm_model)
+        serialized, budget, omitted = formatter_input(raw_text, language, custom_vocabulary,
+            vocabulary_aliases, sys_prompt, profile)
+        if serialized is None:
+            return ClaudeResult(raw_text, None, 0, "[CONTEXT_LIMIT] Metin bağlama sığmadı; eksiksiz ham metin korundu.",
+                omitted_formatter_terms=omitted)
         
         # We add a strong instruction to Anthropic to output pure JSON.
         sys_prompt += "\n\nCRITICAL: Respond ONLY with a valid JSON object. No explanation, no markdown tags. Exact format: {\"text\": \"your formatted text here\"}"
         
         payload = {
             "model": self.llm_model,
-            "max_tokens": 2048,
+            "max_tokens": budget,
             "system": sys_prompt,
             "messages": [
-                {"role": "user", "content": raw_text}
+                {"role": "user", "content": serialized}
             ],
             "temperature": 0.1
         }
@@ -93,20 +118,14 @@ class ClaudeService:
             return ClaudeResult(raw_text, None, round(time.time() - start_time, 2), f"LLM API Hatası ({llm_resp.status_code}): Ham metin korundu.")
             
         try:
-            content = llm_resp.json()["content"][0]["text"]
-            # Claude sometimes ignores the instruction and adds markdown ```json
-            content = content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            parsed = json.loads(content.strip())
-            formatted_text = parsed.get("text", "")
-            if not formatted_text.strip():
-                raise ValueError("Boş JSON yanıtı")
-        except (KeyError, ValueError, json.JSONDecodeError, IndexError):
+            body = llm_resp.json()
+            if body.get("stop_reason") != "end_turn":
+                raise ValueError("Incomplete response")
+            parts = body["content"]
+            content = "".join(part["text"] for part in parts if part.get("type") == "text")
+            formatted_text = parse_output(content, allow_fence=True)
+        except (KeyError, ValueError, TypeError, AttributeError, IndexError):
             return ClaudeResult(raw_text, None, round(time.time() - start_time, 2), "LLM Yanıtı Ayrıştırılamadı: Ham metin korundu.")
             
-        return ClaudeResult(raw_text, formatted_text, round(time.time() - start_time, 2))
+        return ClaudeResult(raw_text, formatted_text, round(time.time() - start_time, 2),
+            omitted_formatter_terms=omitted)

@@ -14,6 +14,7 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()
     result_requested = Signal()
     quit_requested = Signal()
+    cancel_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -134,6 +135,10 @@ class TrayIcon(QSystemTrayIcon):
         result_action = QAction("Son Sonuç / Kaydı Kurtar...", self)
         result_action.triggered.connect(self.result_requested.emit)
         self.menu.addAction(result_action)
+
+        cancel_action = QAction("İşlemi İptal Et", self)
+        cancel_action.triggered.connect(self.cancel_requested.emit)
+        self.menu.addAction(cancel_action)
 
         # Quit action
         self.quit_action = QAction("❌ Çıkış", self)

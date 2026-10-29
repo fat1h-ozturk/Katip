@@ -3,7 +3,7 @@ from katip.prompts import build_system_prompt, build_groq_formatter_prompt, buil
 def test_prompt_modes():
     dictation_p = build_system_prompt("dictation")
     assert "DOĞAL DİKTE" in dictation_p
-    assert "dolgularını" in dictation_p
+    assert "dolgu seslerini" in dictation_p
 
     chat_p = build_system_prompt("chat")
     assert "HIZLI MESAJLAŞMA" in chat_p

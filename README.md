@@ -2,7 +2,9 @@
 
 **Kâtip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
 
-Mikrofonunuzdan konuşmanızı dinler; anlamı koruyarak gereksiz konuşma dolgularını ve dilbilgisi hatalarını düzenler. Aktif pencereye (kod editörü, tarayıcı, Word, sohbet uygulamaları vb.) doğrudan yazar.
+Mikrofonunuzdan konuşmanızı dinler; seçtiğiniz moda göre yazım ve biçimi düzenler. Doğrulanabilen hedef pencereye yapıştırma girdisi gönderir; hedef değişmişse veya doğrulanamıyorsa metni Son Sonuç menüsünde hazır tutar.
+
+Bu geliştirme dalındaki güvenilirlik değişiklikleri ve henüz doğrulanmamış kabul adımları [uygulama durumunda](docs/reliability.md) açıklanmıştır. İndirilebilir yayımlanmış paketler bu dalın değişikliklerini otomatik içermez.
 
 ---
 
@@ -36,7 +38,7 @@ Kâtip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; 
 - **Düz ve Minimalist Koyu Tema (Tailwind Zinc):** Keskin hatlı (`2px` radius), yüksek kontrastlı (`#09090b` ve `#18181b`), göz yormayan modern arayüz.
 - **Otomatik Güncelleme Bildirimi:** Uygulama açılışında arka planda yeni sürüm kontrolü yapılır; yeni bir sürüm çıktığında ekranın sağ üstünde şık bir bildirim kartı belirir ve tek tıkla yeni sürümü indirme imkanı sunar.
 - **Bas-Başlat / Bas-Bitir (Toggle Modu):** Tek bir kısayol tuşuyla (`Ctrl+Alt+Space`) kaydı başlatıp bitirin.
-- **Odak Kaybetmeyen Yüzen Kapsül (Floating Pill):** Ekranın üstünde beliren, ses dalgası animasyonlu modern arayüz. Yazdığınız pencerenin **imleç odağını asla bozmaz**.
+- **Odak Kaybetmeyen Yüzen Kapsül (Floating Pill):** Ekranın üstünde beliren, ses dalgası animasyonlu modern arayüz. Yazdığınız pencerenin **odak almaması için platformun desteklediği önlemleri kullanır**.
 - **Otomatik Ses Normalizasyonu (Volume Boost):** Kısık sesli mikrofonları otomatik olarak analiz eder ve en ideal seviyeye yükselterek yapay zekaya iletir.
 - **5 Farklı Yazma Modu (Personas):**
   - ✍️ **Doğal Dikte (Varsayılan):** Özetlemeden yazım ve noktalamayı düzenler; anlamlı dolguları, vurguları ve belirsizliği korur.
@@ -62,7 +64,11 @@ Kâtip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; 
    - Ekranın üstünde şık bir kapsül belirecek ve siz konuştukça dinleyecektir (yazı imleciniz kaybolmaz).
 4. **Dikteyi Bitirin:**
    - Konuşmanız bittiğinde tekrar **`Ctrl + Alt + Space`** tuşlarına basın.
-   - Düzenlenmiş metin imlecin olduğu yere anında yapıştırılır.
+   - Hedef doğrulanabiliyorsa yapıştırma girdisi gönderilir. Hedef değişmişse veya Wayland gibi ortamlarda kimliği doğrulanamıyorsa metni **Son Sonuç** menüsünden kopyalayın.
+5. **Hata veya İptal Sonrasında:**
+   - Son Sonuç menüsünden ham metni alın, yalnız metni yeniden düzenleyin, sesi filtreli/filtresiz yeniden işleyin veya ham WAV dosyasını kaydedin.
+   - Tek kayıt sınırı **10 dakika veya 64 MiB ham PCM**; sınıra ulaşınca alınan ses korunur. Önceki sesi kopyalayarak, kaydederek veya açıkça temizleyerek yeni kayda geçebilirsiniz.
+   - Ses ve sonuç uygulama belleğindedir; işletim sisteminin uygulamayı öldürmesi veya süreç çökmesi durumunda kalıcı kurtarma garantisi yoktur.
 
 ---
 
@@ -76,28 +82,38 @@ git clone https://github.com/fat1h-ozturk/Katip.git
 cd Katip
 ```
 
-### 2. Sanal Ortamı Hazırlayın
-```bash
-# Linux ve macOS
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
+### 2. Sistem Ön Koşulları
 
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-dev.txt
+Kaynak kurulumunda Python 3.10+ ve PortAudio gerekir. Linux'ta `portaudio19-dev` (Debian/Ubuntu) veya `portaudio-devel` (Fedora), macOS'ta `brew install portaudio` kullanın. PyAudio derlenirken C derleyicisi ve Python geliştirme başlıkları gerekir. Hazır paketin sistem mikrofonu, masaüstü oturumu ve ilgili izinlere erişmesi yine gereklidir.
+
+### 3. Kilitli Ortamı Kurun ve Ayrı Profilde Çalıştırın
+
+```bash
+uv sync --locked --group dev
+# Linux / macOS: üretim ayarları ve IPC'den ayrı aday profil
+KATIP_PROFILE=reliability uv run --no-sync python -m katip
 ```
 
-### 3. Çalıştırın
+Windows PowerShell'de önce `$env:KATIP_PROFILE = "reliability"`, sonra `uv run --no-sync python -m katip` çalıştırın. Profil ilk açılışta kendi ayarlarını ister; üretim anahtarlarını otomatik kopyalamaz. Aday profilde menüye kurulum ve autostart değişikliği kapalıdır. Profil adı küçük harf, rakam ve tire içerebilir; en fazla 32 karakterdir.
+
+`uv` kullanmadan: sanal ortamda `python -m pip install -r requirements-dev.lock`, ardından `python -m pip install --no-deps -e .` çalıştırın. `requirements-dev.lock`, `uv.lock` üzerinden dışa aktarılmış platform işaretli bağımlılıkları içerir.
+
+### 4. Kontroller ve Paketleme
+
 ```bash
-python -m katip
+uv run --no-sync ruff check katip
+uv run --no-sync mypy
+uv run --no-sync pytest -q
+uv run --no-sync pyinstaller katip.spec --clean --noconfirm
 ```
 
-### 4. Testleri Çalıştırın
-```bash
-python -m pytest -q
-```
+Testler gerçek API, mikrofon ve panoyu varsayılan olarak engeller. Uzun DSP ölçümleri isteğe bağlıdır: `KATIP_RUN_PERFORMANCE=1 uv run --no-sync pytest tests/test_audio_performance.py -q -s`. Kaynak kontrolleri, gerçek masaüstü ve canlı sağlayıcı kabulünün yerini tutmaz.
+
+### Anahtarlar ve Teşhis
+
+Masaüstü uygulaması API anahtarlarını işletim sistemi kasasına yazar (Linux Secret Service, Windows Credential Manager, macOS Keychain). Mevcut JSON anahtarları, başarılı kasa yazma/geri okuma sonrasında yapılan ayar kaydında referanslara dönüşür. Kasa kullanılamazsa kayıt başarısız olur ve eski ayarlar korunur; yeni anahtarı düz metne dönüştüren gizli geri dönüş yoktur. İlk göçün `config.previous.json` yedeği eski düz metin anahtarları içerebilir; bunu hassas bir geri dönüş yedeği olarak tutun. Eski sürüme dönmek için uygulamalar kapalıyken bu yedeği kullanın.
+
+Ayar dizinindeki `diagnostics.jsonl` en fazla beş adet 1 MiB dosyaya döner. İçerik oturum kimliği, sıra, geçen süre, aşama, boyut ve kısa hata kodlarıdır; ses, transkript veya API anahtarı yazılmaz. Son Sonuç → Ayrıntılar/Teşhis alanı dışarıya kopyalanmadan önce görülebilir. Normal kullanım otomatik WAV/transkript geçmişi oluşturmaz. Elle kaydettiğiniz dosya ve sistem panosu bu bellek politikasından ayrıdır.
 
 ---
 
@@ -122,18 +138,20 @@ odağını alamaz; ayarlar ve sonuç pencereleri bu kuralın dışındadır. Ba�
 Bu entegrasyon KDE'nin `kreadconfig6` / `kwriteconfig6` (veya Plasma 5 araçlarını)
 gerektirir; yönetici yetkisi istemez. Diğer masaüstleri bu KWin kuralını kullanmaz.
 
-Kısayol hiç algılanmıyorsa, Linux'taki doğrudan klavye dinleyicisinin giriş
+Wayland'da önce GlobalShortcuts portalı denenir; izin reddi görünür bildirilir. Portal kullanılamıyorsa evdev/IPC yolu kullanılır. Kısayol hiç algılanmıyorsa, Linux'taki doğrudan klavye dinleyicisinin giriş
 aygıtlarını okuma izni olmayabilir. `input` grubuna genel erişim vermek yerine,
 Sistem Ayarları → Kısayollar bölümünde `katip --toggle` komutuna bir kısayol
 atayabilirsiniz. Bu yöntem açık olan Kâtip örneğini tetikler ve klavyeye doğrudan
 erişim gerektirmez. Aynı tuş birleşimini iki dinleyicide birden kullanmayın.
 
-Wayland'da otomatik yapıştırma için `wl-copy` ve çalışan bir `ydotoold` gerekir.
+Wayland'da genel bir aktif pencere kimliği API'si olmadığı için bu aday otomatik teslimi doğrulayamaz ve sonucu kopyalamaya hazır tutar. Ayarlardaki açık hedefli yapıştırma testinde `wl-copy` ve çalışan bir `ydotoold` gerekir.
 Fedora'da paketleri `sudo dnf install wl-clipboard ydotool` ile kurabilirsiniz.
 `ydotool` paketinin kurulu olması servisin çalıştığı anlamına gelmez; ayrıca
 istemcinin daemon soketine erişebilmesi gerekir. Fedora'da durumunu
 `systemctl status ydotool` ile kontrol edin. Soket yolu, sahipliği ve servis
 kurulumu dağıtıma göre değişebilir; uygulamayı root olarak çalıştırmayın.
+
+Pano geri yükleme, yalnız sürüm/sahiplik takibi olan Windows ve macOS arka uçlarında desteklenir. Linux'ta bu seçenek açıkken işlem mevcut panoyu koruyarak durur; sonucu elle kopyalayabilir veya seçeneği kapatabilirsiniz.
 
 Terminalde Ctrl+Shift+V göndermek için **Terminal Uyumluluk Modu**nu açın.
 Normal metin alanları Ctrl+V bekliyorsa bu modu kapatın; Kâtip şu anda hedef

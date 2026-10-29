@@ -18,7 +18,7 @@ def test_gemini_collects_all_text_parts_except_thoughts():
         {"text": "First. "}, {"text": "Second."},
     ]}}]})
     with patch.object(service._session, "post", return_value=result) as post:
-        assert service.transcribe_and_format(b"fake")[0] == "First. Second."
+        assert service.transcribe_and_format(b"fake").text == "First. Second."
     assert "secret" not in post.call_args.args[0]
     assert post.call_args.kwargs["headers"]["x-goog-api-key"] == "secret"
 

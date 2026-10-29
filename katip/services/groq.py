@@ -5,11 +5,15 @@ import math
 import re
 import time
 from collections import Counter
-from dataclasses import dataclass, replace
-from typing import Optional
+from dataclasses import replace
 
 import requests
+from ..infrastructure.http_transport import HttpSession
 
+from .common import publish_transcript, formatting_stage, http_status_message
+from ..domain.models import DictationResult
+from ..domain.errors import ProviderError, ConfigurationError
+from ..diagnostics import Diagnostics
 from ..config import normalize_vocabulary_aliases
 from ..prompts import build_groq_formatter_prompt, build_whisper_prompt
 
@@ -22,27 +26,8 @@ _MODEL_CAPABILITIES = {
 _FAILURE_WARNING = "Metin düzenlenemedi; eksiksiz ham transkript korundu."
 
 
-@dataclass(frozen=True)
-class GroqResult:
-    raw_transcript: str
-    formatted_text: Optional[str]
-    latency: float
-    warning: str = ""
-    segments: tuple[dict, ...] = ()
-    mode: str = "dictation"
-    language: str = "tr"
-    custom_vocabulary: tuple[str, ...] = ()
-    vocabulary_aliases: tuple[tuple[str, str], ...] = ()
-    llm_model: str = ""
-    stt_model: str = ""
-    omitted_stt_terms: int = 0
-    omitted_formatter_terms: int = 0
-    literal_changes: tuple[str, ...] = ()
-
-    @property
-    def text(self) -> str:
-        return self.formatted_text if self.formatted_text is not None else self.raw_transcript
-
+# Backwards-compatible name; all providers now share this result contract.
+GroqResult = DictationResult
 
 _LITERAL_RE = re.compile(
     r"```[^`]*(?:`(?!``)[^`]*)*```|`[^`\n]+`|https?://[^\s<>\"`]+"
@@ -108,18 +93,19 @@ def _parse_output(content):
 class GroqService:
     def __init__(self, api_key: str, stt_model: str = "whisper-large-v3-turbo",
                  llm_model: str = "qwen/qwen3.8-27b"):
+        self.diagnostics = Diagnostics()
         self.last_warning = ""
         self.api_key = api_key.strip() if api_key else ""
         self.stt_model = stt_model or "whisper-large-v3-turbo"
         self.llm_model = llm_model or "qwen/qwen3.8-27b"
-        self._session = requests.Session()
+        self._session = HttpSession()
         self._session.headers.update({"Authorization": f"Bearer {self.api_key}"})
 
     def transcribe_and_format(self, audio_bytes: bytes, mode="dictation", custom_vocabulary=None,
-                              language="tr", timeout=25, vocabulary_aliases=None) -> GroqResult:
+                              language="tr", timeout=90, vocabulary_aliases=None) -> GroqResult:
         self.last_warning = ""
         if not self.api_key:
-            raise ValueError("Groq API anahtarı bulunamadı! Lütfen Ayarlar'dan API anahtarınızı girin.")
+            raise ConfigurationError("Groq API anahtarı bulunamadı! Lütfen Ayarlar'dan API anahtarınızı girin.")
         start = time.monotonic()
         aliases = normalize_vocabulary_aliases(vocabulary_aliases or {})
         vocabulary = tuple(custom_vocabulary or ())
@@ -130,29 +116,36 @@ class GroqService:
             data["language"] = lang
         if prompt:
             data["prompt"] = prompt
+        self.diagnostics.event("stt_started", stage="stt", audio_bytes=len(audio_bytes))
         try:
             response = self._session.post(GROQ_AUDIO_URL,
                 files={"file": ("audio.wav", audio_bytes, "audio/wav")}, data=data, timeout=timeout)
+        except requests.exceptions.Timeout:
+            self.diagnostics.event("failed", stage="stt", code="NETWORK_TIMEOUT")
+            raise ProviderError("NETWORK_TIMEOUT", "stt", "Ses tanıma zaman aşımı; kayıt korunuyor. Yeniden deneyebilir veya sesi kaydedebilirsiniz.") from None
         except requests.exceptions.RequestException:
+            self.diagnostics.event("failed", stage="stt", code="NETWORK_CONNECTION")
             # ASVS 16.5.1: never expose raw exceptions containing keys or transcripts.
-            raise RuntimeError("Groq Whisper bağlantı hatası. Lütfen tekrar deneyin.") from None
+            raise ProviderError("NETWORK_CONNECTION", "stt", "Groq Whisper bağlantı hatası. Lütfen tekrar deneyin.") from None
         if response.status_code != 200:
             if response.status_code == 401:
-                raise RuntimeError("Groq API anahtarı geçersiz veya iptal edilmiş (401). Ayarlar'dan güncelleyin.")
-            raise RuntimeError(f"Groq Whisper Hatası (HTTP {response.status_code}). Lütfen tekrar deneyin.")
+                raise ProviderError("HTTP_ERROR", "stt", "Groq API anahtarı geçersiz veya iptal edilmiş (401). Ayarlar'dan güncelleyin.")
+            raise ProviderError("HTTP_ERROR", "stt", f"Groq Whisper Hatası (HTTP {response.status_code}). Lütfen tekrar deneyin.")
         try:
             body = response.json()
             raw = body["text"]
             if not isinstance(raw, str):
                 raise ValueError("invalid text")
         except (ValueError, TypeError, KeyError):
-            raise RuntimeError("Groq Whisper yanıtı ayrıştırılamadı.") from None
+            raise ProviderError("OUTPUT_INVALID", "stt", "Groq Whisper yanıtı ayrıştırılamadı.") from None
+        publish_transcript(self, raw, mode, vocabulary, language, aliases)
         result = self.format_transcript(raw, mode, vocabulary, language, aliases, timeout,
                                         _segments(body.get("segments")), omitted)
         return replace(result, latency=round(time.monotonic() - start, 2))
 
+    @formatting_stage
     def format_transcript(self, raw_transcript, mode="dictation", custom_vocabulary=None,
-                          language="tr", vocabulary_aliases=None, timeout=25,
+                          language="tr", vocabulary_aliases=None, timeout=90,
                           segments=(), omitted_stt_terms=0) -> GroqResult:
         start = time.monotonic()
         self.last_warning = ""
@@ -197,7 +190,7 @@ class GroqService:
                 payload.update(reasoning_format="hidden", reasoning_effort="none")
             failure_detail = "Groq metin hizmetine bağlantı kurulamadı veya istek zaman aşımına uğradı."
             response = self._session.post(GROQ_CHAT_URL, json=payload,
-                timeout=min(60, max(timeout, 25 + (budget - 2048) * 35 / 6144)))
+                timeout=min(90, timeout))
             if response.status_code != 200:
                 # ASVS 16.5.1: report actionable status, never the private response body.
                 failure_detail = {
@@ -206,6 +199,8 @@ class GroqService:
                     404: "Seçili metin modeli bulunamadı veya erişilemiyor (HTTP 404). Ayarlar'dan erişilebilir bir metin modeli seçin.",
                     429: "Groq metin isteği kullanım sınırına takıldı (HTTP 429). Daha sonra yeniden deneyin.",
                 }.get(response.status_code, f"Groq metin isteği başarısız (HTTP {response.status_code}).")
+                if response.status_code == 429:
+                    failure_detail = http_status_message("Groq metin", response)
                 raise ValueError("formatter HTTP error")
             failure_detail = "Groq metin yanıtının biçimi doğrulanamadı."
             choice = response.json()["choices"][0]

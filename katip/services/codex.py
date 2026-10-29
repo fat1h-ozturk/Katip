@@ -4,10 +4,16 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Optional
+from dataclasses import dataclass, replace
 import requests
+from ..infrastructure.http_transport import http_post
+from ..infrastructure.process_runner import run_process, clean_environment
 
-from ..prompts import build_groq_formatter_prompt
+from ..domain.errors import ProviderError, ConfigurationError
+from ..domain.models import DictationResult
+from .common import parse_output, formatter_input, publish_transcript, formatting_stage, start_stt, http_status_message
+from .catalog import model_profile
+from ..prompts import build_groq_formatter_prompt, build_whisper_prompt
 
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 OPENAI_AUDIO_URL = "https://api.openai.com/v1/audio/transcriptions"
@@ -70,16 +76,9 @@ def _find_codex_binary() -> str:
     return "codex"
 
 
-class CodexResult:
-    def __init__(self, raw_transcript: str, formatted_text: Optional[str], latency: float, warning: str = ""):
-        self.raw_transcript = raw_transcript
-        self.formatted_text = formatted_text
-        self.latency = latency
-        self.warning = warning
-
-    @property
-    def text(self) -> str:
-        return self.formatted_text if self.formatted_text is not None else self.raw_transcript
+@dataclass(frozen=True)
+class CodexResult(DictationResult):
+    provider: str = "codex"
 
 class CodexService:
     def __init__(self, stt_provider: str = "", stt_api_key: str = "", stt_model: str = "",
@@ -90,15 +89,19 @@ class CodexService:
         self.codex_model = codex_model.strip()
 
     def transcribe_and_format(self, audio_bytes: bytes, mode="dictation", custom_vocabulary=None,
-                              language="auto", timeout=45, vocabulary_aliases=None) -> CodexResult:
+                              language="auto", timeout=90, vocabulary_aliases=None) -> CodexResult:
         if not self.stt_api_key:
-            raise ValueError("Codex ile sesli dikte kullanabilmek için STT (Groq veya OpenAI) anahtarı gereklidir!")
+            raise ConfigurationError("Codex ile sesli dikte kullanabilmek için STT (Groq veya OpenAI) anahtarı gereklidir!")
             
         start_time = time.time()
         
+        start_stt(self, len(audio_bytes))
         # 1. Transcription (Whisper fallback via Groq or OpenAI)
         files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
         data = {"model": self.stt_model, "response_format": "text"}
+        prompt, omitted_stt = build_whisper_prompt(custom_vocabulary, vocabulary_aliases)
+        if prompt:
+            data["prompt"] = prompt
         if language and language != "auto":
             data["language"] = language
             
@@ -106,26 +109,48 @@ class CodexService:
         stt_url = GROQ_AUDIO_URL if self.stt_provider == "groq" else OPENAI_AUDIO_URL
             
         try:
-            stt_resp = requests.post(stt_url, files=files, data=data, headers=stt_headers, timeout=timeout)
+            stt_resp = http_post(stt_url, files=files, data=data, headers=stt_headers, timeout=timeout)
+        except requests.exceptions.Timeout:
+            raise ProviderError("NETWORK_TIMEOUT", "stt", "Ses tanıma zaman aşımı; ham kayıt korunuyor.") from None
         except requests.exceptions.RequestException:
-            raise RuntimeError(f"{self.stt_provider.upper()} STT bağlantı hatası.")
+            raise ProviderError("NETWORK_CONNECTION", "stt", f"{self.stt_provider.upper()} STT bağlantı hatası.")
             
         if stt_resp.status_code != 200:
-            raise RuntimeError(f"{self.stt_provider.upper()} STT API Hatası (HTTP {stt_resp.status_code})")
+            raise ProviderError("HTTP_ERROR", "stt", http_status_message(self.stt_provider.upper() + " STT", stt_resp))
             
         raw_text = stt_resp.text.strip()
         if not raw_text:
             return CodexResult("", None, round(time.time() - start_time, 2))
             
+        publish_transcript(self, raw_text, mode, custom_vocabulary, language, vocabulary_aliases)
+        result = self.format_transcript(raw_text, mode, custom_vocabulary, language,
+                                        vocabulary_aliases, timeout)
+        return replace(result, latency=round(time.time() - start_time, 2), omitted_stt_terms=omitted_stt)
+
+    @formatting_stage
+    def format_transcript(self, raw_text, mode="dictation", custom_vocabulary=None,
+                          language="auto", vocabulary_aliases=None, timeout=90, **_metadata):
+        start_time = time.time()
+        result = self._format(raw_text, mode, custom_vocabulary, language, vocabulary_aliases, timeout)
+        return replace(result, mode=mode, language=language,
+                       custom_vocabulary=tuple(custom_vocabulary or ()),
+                       vocabulary_aliases=tuple((vocabulary_aliases or {}).items()),
+                       stt_model=self.stt_model, llm_model=self.codex_model,
+                       latency=round(time.time() - start_time, 2))
+
+    def _format(self, raw_text, mode, custom_vocabulary, language, vocabulary_aliases, timeout):
+        start_time = time.time()
         # 2. Formatting (Codex CLI)
         sys_prompt = build_groq_formatter_prompt(mode)
         
-        # Talimat ve ham metin
-        user_data = json.dumps({"transcript": raw_text, "language": language,
-                                "custom_vocabulary": custom_vocabulary or [],
-                                "vocabulary_aliases": vocabulary_aliases or {}}, ensure_ascii=False)
-        prompt = f"{sys_prompt}\n\n---\n\nCRITICAL: Respond ONLY with a valid JSON object. Exact format: {{\"text\": \"formatted text here\"}}\n\nUser data:\n{user_data}"
-        
+        serialized, _budget, omitted = formatter_input(raw_text, language, custom_vocabulary,
+            vocabulary_aliases, sys_prompt, model_profile("codex", self.codex_model))
+        if serialized is None:
+            return CodexResult(raw_text, None, 0,
+                "[CONTEXT_LIMIT] Metin bağlama sığmadı; eksiksiz ham metin korundu.",
+                omitted_formatter_terms=omitted)
+        prompt = sys_prompt + '\n\nRespond ONLY with a JSON object: {"text": "formatted text"}.\nUser data:\n' + serialized
+
         codex_cmd = _find_codex_binary()
         cmd = [
             codex_cmd, "exec", 
@@ -137,9 +162,9 @@ class CodexService:
         if self.codex_model:
             cmd.extend(["-m", self.codex_model])
             
-        cmd.append(prompt)
+        cmd.append("-")
 
-        env = os.environ.copy()
+        env = clean_environment()
         user_local_bin = os.path.expanduser("~/.local/bin")
         current_path = env.get("PATH", "")
         if user_local_bin not in current_path.split(os.pathsep):
@@ -147,8 +172,9 @@ class CodexService:
         
         try:
             # ASVS 1.2.5: pass arguments without a shell; decode CLI output as UTF-8.
-            result = subprocess.run(
+            result = run_process(
                 cmd,
+                input=prompt,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -162,7 +188,7 @@ class CodexService:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Codex yanıt vermedi (Zaman aşımı).")
             
         if result.returncode != 0:
-            return CodexResult(raw_text, None, round(time.time() - start_time, 2), f"Codex Hatası: {result.stderr.strip()}")
+            return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Codex işlemi başarısız; ham metin korundu.")
             
         try:
             # --json emits JSONL events, not a single answer object.
@@ -183,26 +209,9 @@ class CodexService:
             if not completed or not isinstance(answer_content, str) or not answer_content.strip():
                 raise ValueError("Codex yanıtı tamamlanmadı")
             
-            # İçinde JSON var mı kontrol et
-            inner_parsed = None
-            try:
-                inner_parsed = json.loads(answer_content)
-            except json.JSONDecodeError:
-                # Markdown blokları içinde olabilir
-                if "```json" in answer_content:
-                    extracted = answer_content.split("```json")[1].split("```")[0].strip()
-                    inner_parsed = json.loads(extracted)
-                elif "```" in answer_content:
-                    extracted = answer_content.split("```")[1].split("```")[0].strip()
-                    inner_parsed = json.loads(extracted)
-            
-            # ASVS 2.2.1: accept only the requested non-empty text field.
-            if not isinstance(inner_parsed, dict):
-                raise ValueError("Geçersiz yanıt")
-            formatted_text = inner_parsed.get("text")
-            if not isinstance(formatted_text, str) or not formatted_text.strip():
-                raise ValueError("Boş veya geçersiz metin")
+            formatted_text = parse_output(answer_content, allow_fence=True)
         except Exception:
             return CodexResult(raw_text, None, round(time.time() - start_time, 2), "Codex yanıtı JSON olarak ayrıştırılamadı.")
             
-        return CodexResult(raw_text, formatted_text, round(time.time() - start_time, 2))
+        return CodexResult(raw_text, formatted_text, round(time.time() - start_time, 2),
+            omitted_formatter_terms=omitted)

@@ -4,11 +4,8 @@ CLI and Desktop entry point for Katip.
 
 import argparse
 import sys
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication
 
 from . import __version__
-from .app import KatipApp
 from .desktop import (
     attach_windows_console,
     detach_windows_console,
@@ -21,16 +18,13 @@ from .desktop import (
     set_autostart,
     uninstall_desktop_entry,
 )
-from .hotkey import (
-    is_instance_running,
-    notify_running_instance,
-    open_running_settings,
-    send_ipc_start,
-    send_ipc_stop,
-    send_ipc_toggle,
-)
+
 
 def main():
+    if sys.argv[1:] == ["--internal-overlay"]:
+        from .ui.overlay_gtk import LayerOverlayApp
+        LayerOverlayApp().run()
+        return
     if len(sys.argv) > 1:
         attach_windows_console()
 
@@ -90,6 +84,15 @@ def main():
     )
 
     args, unknown = parser.parse_known_args()
+
+    from .hotkey import (
+        is_instance_running,
+        notify_running_instance,
+        open_running_settings,
+        send_ipc_start,
+        send_ipc_stop,
+        send_ipc_toggle,
+    )
 
     # 1. Handle --install
     if args.install:
@@ -200,12 +203,18 @@ def main():
     # Auto-register desktop entry on first GUI run
     ensure_desktop_installed()
 
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+    from .app import KatipApp
+
     # Launch GUI Application
     q_app = QApplication(sys.argv)
-    q_app.setApplicationName("Katip")
-    q_app.setApplicationDisplayName("Kâtip")
+    from .runtime import app_id
+    q_app.setApplicationName(app_id())
+    from .runtime import profile
+    q_app.setApplicationDisplayName(f"Kâtip ({profile()})" if profile() else "Kâtip")
     # Stable Wayland app_id for the overlay's narrowly scoped KWin rule.
-    q_app.setDesktopFileName("katip")
+    q_app.setDesktopFileName(app_id())
     q_app.setQuitOnLastWindowClosed(False)
 
     # Set application icon

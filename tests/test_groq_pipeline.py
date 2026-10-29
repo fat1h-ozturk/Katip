@@ -82,7 +82,7 @@ def test_bounded_budgets_and_context_overflow_never_cut_input():
         assert post.call_args.kwargs["json"]["max_tokens"] == 2048
         service.format_transcript("uzun " * 2000, mode="email")
         assert post.call_args.kwargs["json"]["max_tokens"] == 8192
-        assert post.call_args.kwargs["timeout"] == 60
+        assert post.call_args.kwargs["timeout"] == 90
         raw = "ğ" * 100000
         result = service.format_transcript(raw)
         assert result.raw_transcript == raw and result.warning

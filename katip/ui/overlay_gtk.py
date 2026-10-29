@@ -3,8 +3,8 @@ GTK4 Layer Shell Overlay for Katip on Wayland.
 Renders an ultra-smooth floating pill on the OVERLAY layer that CANNOT steal keyboard focus.
 """
 
-import os
 import sys
+from ..runtime import app_id
 import gi
 
 gi.require_version('Gtk', '4.0')
@@ -61,7 +61,7 @@ window {
 
 class LayerOverlayApp:
     def __init__(self):
-        self.app = Gtk.Application(application_id="com.talktowrite.layeroverlay")
+        self.app = Gtk.Application(application_id="com.talktowrite." + app_id().replace("-", "_") + ".layeroverlay")
         self.app.connect("activate", self.on_activate)
         self.hide_timer_id = 0
 
@@ -103,6 +103,7 @@ class LayerOverlayApp:
 
         # Start hidden
         self.win.set_visible(False)
+        print("READY", flush=True)
 
         # Watch stdin for commands from the main Katip process
         channel = GLib.IOChannel.unix_new(sys.stdin.fileno())
@@ -152,7 +153,7 @@ class LayerOverlayApp:
 
         elif action == "SUCCESS":
             latency = arg if arg else ""
-            txt = f"✓ Yapıştırıldı! ({latency}s)" if latency else "✓ Yapıştırıldı!"
+            txt = f"✓ Girdi gönderildi! ({latency}s)" if latency else "✓ Girdi gönderildi!"
             self.status_label.set_text(txt)
             self.box.add_css_class("pill-success")
             self.win.set_visible(True)

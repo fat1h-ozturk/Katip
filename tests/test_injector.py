@@ -11,6 +11,9 @@ class FakeInjector(BaseInjector):
         self.plain = plain
         self.paste = paste
 
+    def clipboard_revision(self):
+        return hash(self.clipboard)
+
     def can_restore_clipboard(self):
         return self.plain
 
@@ -92,3 +95,15 @@ def test_windows_clipboard_uses_owner_and_frees_failed_transfer(monkeypatch, all
     assert user32.OpenClipboard.call_args_list[-1].args == (42,)
     assert kernel32.GlobalFree.call_count == 2
     user32.DestroyWindow.assert_called_once_with(42)
+
+
+def test_frozen_system_clipboard_tool_gets_clean_environment(monkeypatch):
+    import sys
+    from katip.injector import _system_run
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/tmp/_MEI-bundled-libraries')
+    monkeypatch.delenv('LD_LIBRARY_PATH_ORIG', raising=False)
+    called = []
+    monkeypatch.setattr('katip.injector.subprocess.run', lambda *a, **kw: called.append(kw))
+    _system_run(['wl-copy'], input=b'fake')
+    assert 'LD_LIBRARY_PATH' not in called[0]['env'] and called[0]['timeout'] == 3

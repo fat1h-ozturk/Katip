@@ -5,14 +5,16 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from .runtime import app_id, profile
+from .infrastructure.process_runner import clean_environment
 
 OVERLAY_TITLE = "Katip Recording Overlay"
-_RULE_GROUP = "KatipOverlay"
+_RULE_GROUP = "KatipOverlay" if app_id() == "katip" else "KatipOverlay-" + app_id()
 _RULE = {
     "Description": "Katip recording indicator: preserve editor focus",
     "title": r"^Katip Recording Overlay( — .*)?$",
     "titlematch": "3",  # Regular expression, including Qt's display-name suffix.
-    "wmclass": "katip",
+    "wmclass": app_id(),
     "wmclassmatch": "1",
     "acceptfocus": "false",
     "acceptfocusrule": "2",  # Force; Qt's no-focus hint is insufficient on KWin.
@@ -32,14 +34,7 @@ def _tools():
 
 def _run(args):
     # Frozen Qt libraries must not leak into the system's KDE tools.
-    env = os.environ.copy()
-    if getattr(sys, "frozen", False):
-        if "LD_LIBRARY_PATH_ORIG" in env:
-            env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
-        else:
-            env.pop("LD_LIBRARY_PATH", None)
-        env.pop("QT_PLUGIN_PATH", None)
-        env.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
+    env = clean_environment()
     return subprocess.run(args, capture_output=True, text=True, check=True,
                           timeout=3, env=env)
 
@@ -60,6 +55,8 @@ def ensure_overlay_rule() -> bool:
     KConfig tools preserve unrelated rules and KDE-specific escaping. This is
     needed for the Qt fallback on KDE Wayland, not the layer-shell overlay.
     """
+    if profile():
+        return False  # Candidate runs never edit production compositor rules.
     desktops = os.environ.get("XDG_CURRENT_DESKTOP", "").upper().split(":")
     if (not sys.platform.startswith("linux")
             or os.environ.get("XDG_SESSION_TYPE") != "wayland"

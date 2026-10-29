@@ -6,12 +6,19 @@ into the currently active window.
 
 import abc
 import ctypes
-import os
 import shutil
 import subprocess
 import sys
 import time
 from typing import Optional
+from .infrastructure.process_runner import clean_environment
+
+def _system_run(*args, **kwargs):
+    # Keep system clipboard/input tools separate from bundled Qt libraries.
+    kwargs.setdefault("env", clean_environment())
+    kwargs.setdefault("timeout", 3)
+    return subprocess.run(*args, **kwargs)
+
 
 class BaseInjector(abc.ABC):
     """Abstract base class for platform-specific text injectors."""
@@ -36,7 +43,10 @@ class BaseInjector(abc.ABC):
         """Only allow restoration when every present clipboard format is plain text."""
         return False
 
-    def inject_text(self, text: str) -> bool:
+    def clipboard_revision(self):
+        return None
+
+    def inject_text(self, text: str, before_paste=None) -> bool:
         """
         Main injection routine:
         1. Optionally captures existing clipboard.
@@ -46,6 +56,8 @@ class BaseInjector(abc.ABC):
         5. Optionally restores previous clipboard.
         """
         self.last_error = ""
+        if before_paste:
+            before_paste()
         if not text:
             self.last_error = "Yapıştırılacak metin boş."
             return False
@@ -55,6 +67,9 @@ class BaseInjector(abc.ABC):
             # ASVS 16.5.3: do not replace data that cannot be restored exactly.
             if not self.can_restore_clipboard():
                 self.last_error = "Mevcut pano içeriği güvenle geri yüklenemiyor; pano korunuyor."
+                return False
+            if self.clipboard_revision() is None:
+                self.last_error = "Bu ortamda pano sürümü izlenemiyor; mevcut pano korundu. Metin Son Sonuç menüsünde hazır."
                 return False
             old_clipboard = self.get_current_clipboard()
             if old_clipboard is None:
@@ -67,9 +82,13 @@ class BaseInjector(abc.ABC):
             self.last_error = "Metin panoya kopyalanamadı."
             return False
 
+        written_revision = self.clipboard_revision()
+
         # Brief delay so active app sees updated clipboard
         time.sleep(0.06)
 
+        if before_paste:
+            before_paste()
         pasted = self.simulate_paste()
 
         if not pasted:
@@ -78,6 +97,11 @@ class BaseInjector(abc.ABC):
 
         if self.restore_clipboard and old_clipboard is not None:
             time.sleep(0.3)
+            # Both a backend revision and matching content are required.
+            if self.get_current_clipboard() != text:
+                return pasted
+            if self.clipboard_revision() != written_revision:
+                return pasted
             if not self.set_clipboard(old_clipboard):
                 self.last_error = "Metin yapıştırıldı ancak önceki pano geri yüklenemedi."
                 return False
@@ -106,7 +130,7 @@ class LinuxInjector(BaseInjector):
             commands.append(["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"])
         for command in commands:
             try:
-                result = subprocess.run(command, capture_output=True, text=True, timeout=1)
+                result = _system_run(command, capture_output=True, text=True, timeout=1)
                 if result.returncode == 0:
                     plain = {"TARGETS", "TIMESTAMP", "MULTIPLE", "SAVE_TARGETS", "UTF8_STRING", "STRING", "TEXT", "COMPOUND_TEXT"}
                     return all(kind in plain or kind.startswith("text/plain") for kind in result.stdout.splitlines())
@@ -117,14 +141,14 @@ class LinuxInjector(BaseInjector):
     def get_current_clipboard(self) -> Optional[str]:
         if self.has_wl_paste:
             try:
-                res = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True, timeout=1)
+                res = _system_run(["wl-paste", "--no-newline"], capture_output=True, text=True, timeout=1)
                 if res.returncode == 0:
                     return res.stdout
             except Exception:
                 pass
         if self.has_xclip:
             try:
-                res = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=1)
+                res = _system_run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=1)
                 if res.returncode == 0:
                     return res.stdout
             except Exception:
@@ -134,14 +158,14 @@ class LinuxInjector(BaseInjector):
     def set_clipboard(self, text: str) -> bool:
         if self.has_wl_copy:
             try:
-                subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True, timeout=2)
+                _system_run(["wl-copy"], input=text.encode("utf-8"), check=True, timeout=2)
                 return True
             except Exception as e:
                 print(f"[LinuxInjector] wl-copy error: {e}")
 
         if self.has_xclip:
             try:
-                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True, timeout=2)
+                _system_run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True, timeout=2)
                 return True
             except Exception as e:
                 print(f"[LinuxInjector] xclip error: {e}")
@@ -154,13 +178,13 @@ class LinuxInjector(BaseInjector):
             try:
                 if self.terminal_paste:
                     # 29=LEFTCTRL, 42=LEFTSHIFT, 47=V
-                    res = subprocess.run(
+                    res = _system_run(
                         ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
                         capture_output=True, timeout=2
                     )
                 else:
                     # 29=LEFTCTRL, 47=V
-                    res = subprocess.run(
+                    res = _system_run(
                         ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
                         capture_output=True, timeout=2
                     )
@@ -173,7 +197,7 @@ class LinuxInjector(BaseInjector):
         if self.has_xdotool:
             try:
                 key_combo = "ctrl+shift+v" if self.terminal_paste else "ctrl+v"
-                res = subprocess.run(["xdotool", "key", key_combo], capture_output=True, timeout=2)
+                res = _system_run(["xdotool", "key", key_combo], capture_output=True, timeout=2)
                 if res.returncode == 0:
                     return True
             except Exception as e:
@@ -183,6 +207,12 @@ class LinuxInjector(BaseInjector):
 
 
 class WindowsInjector(BaseInjector):
+    def clipboard_revision(self):
+        try:
+            return ctypes.windll.user32.GetClipboardSequenceNumber()
+        except Exception:
+            return None
+
     """Windows text injector using native Win32 user32.dll and clipboard."""
 
     def can_restore_clipboard(self) -> bool:
@@ -366,11 +396,18 @@ class WindowsInjector(BaseInjector):
 
 
 class MacInjector(BaseInjector):
+    def clipboard_revision(self):
+        try:
+            from AppKit import NSPasteboard
+            return int(NSPasteboard.generalPasteboard().changeCount())
+        except Exception:
+            return None
+
     """macOS text injector using pbcopy/pbpaste and AppleScript System Events (Cmd+V)."""
 
     def can_restore_clipboard(self) -> bool:
         try:
-            result = subprocess.run(["osascript", "-e", "clipboard info"], capture_output=True, text=True, timeout=1)
+            result = _system_run(["osascript", "-e", "clipboard info"], capture_output=True, text=True, timeout=1)
             if result.returncode != 0:
                 return False
             # AppleScript reports each representation as {type, byte count}.
@@ -381,7 +418,7 @@ class MacInjector(BaseInjector):
 
     def get_current_clipboard(self) -> Optional[str]:
         try:
-            res = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=1)
+            res = _system_run(["pbpaste"], capture_output=True, text=True, timeout=1)
             if res.returncode == 0:
                 return res.stdout
         except Exception:
@@ -390,7 +427,7 @@ class MacInjector(BaseInjector):
 
     def set_clipboard(self, text: str) -> bool:
         try:
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=2)
+            _system_run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=2)
             return True
         except Exception as e:
             print(f"[MacInjector] pbcopy error: {e}")
@@ -401,7 +438,7 @@ class MacInjector(BaseInjector):
         """Sends Cmd+V keystroke via AppleScript."""
         script = 'tell application "System Events" to keystroke "v" using command down'
         try:
-            res = subprocess.run(
+            res = _system_run(
                 ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
@@ -452,5 +489,5 @@ class TextInjector:
     def simulate_paste(self) -> bool:
         return self._backend.simulate_paste()
 
-    def inject_text(self, text: str) -> bool:
-        return self._backend.inject_text(text)
+    def inject_text(self, text: str, before_paste=None) -> bool:
+        return self._backend.inject_text(text, before_paste=before_paste)

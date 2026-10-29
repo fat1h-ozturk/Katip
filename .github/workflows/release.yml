@@ -78,7 +78,9 @@ jobs:
 
       # ASVS 15.2.1: keep the release packager on a reviewed, explicit version.
       - name: Install application and pinned packager
-        run: python -m pip install -r requirements-dev.txt "pyinstaller==6.20.0"
+        run: |
+          python -m pip install -r requirements-dev.lock
+          python -m pip install --no-deps -e .
 
       - name: Run isolated tests
         run: python -m pytest -q

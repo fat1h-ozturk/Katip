@@ -2,6 +2,7 @@
 import os
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import copy_metadata
 
 block_cipher = None
 project_root = Path(os.path.abspath(".")).resolve()
@@ -16,34 +17,44 @@ datas = [
     (str(project_root / "assets"), "assets"),
 ]
 
+datas += copy_metadata("soxr") + copy_metadata("numpy") + copy_metadata("keyring", recursive=True)
+
 hiddenimports = [
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtWidgets",
     "pyaudio",
     "webrtcvad",
-    "pynput",
-    "pynput.keyboard",
-    "pynput.mouse",
     "requests",
     "ctypes",
+    "soxr",
+    "numpy",
+    "PySide6.QtNetwork",
 ]
 
 if sys.platform.startswith("win"):
     hiddenimports += [
+        "pynput", "pynput.keyboard", "pynput.mouse",
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
         "winsound",
+        "keyring.backends.Windows",
         "ctypes.wintypes",
     ]
 elif sys.platform == "darwin":
     hiddenimports += [
+        "pynput", "pynput.keyboard", "pynput.mouse",
+        "keyring.backends.macOS",
         "pynput.keyboard._darwin",
         "pynput.mouse._darwin",
     ]
 elif sys.platform.startswith("linux"):
     hiddenimports += [
         "evdev",
+        "dbus_next",
+        "keyring.backends.SecretService",
+        "secretstorage",
+        "jeepney",
     ]
 
 a = Analysis(
@@ -55,7 +66,7 @@ a = Analysis(
     hookspath=[str(project_root / "pyinstaller_hooks")],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "numpy", "scipy", "pandas"],
+    excludes=["tkinter", "matplotlib", "scipy", "pandas"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

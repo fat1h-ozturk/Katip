@@ -4,7 +4,7 @@ Renders a modern, non-intrusive notification in the top-right corner of the scre
 """
 
 import sys
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QHBoxLayout,

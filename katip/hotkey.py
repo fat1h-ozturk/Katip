@@ -10,10 +10,12 @@ import socket
 import stat
 import sys
 import threading
+import time
 from typing import Callable, List, Optional, Set
+from .runtime import app_id, ipc_port
 
-SOCKET_PATH = os.path.join(os.path.expanduser("~"), ".katip.sock")
-TCP_PORT = 49215
+SOCKET_PATH = os.path.join(os.path.expanduser("~"), f".{app_id()}.sock")
+TCP_PORT = ipc_port()
 
 # macOS virtual key codes (US hardware positions). Reading these directly from
 # CGEvents avoids pynput's Carbon keyboard-layout lookup, which can abort on
@@ -102,15 +104,29 @@ class HotkeyManager:
         on_release: Optional[Callable[[], None]] = None,
         on_notify_running: Optional[Callable[[], None]] = None,
         on_open_settings: Optional[Callable[[], None]] = None,
+        on_trigger=None,
+        on_status=None,
     ):
         self.hotkey_str = hotkey_str
         self.trigger_mode = trigger_mode  # "toggle" or "push_to_talk"
-        self.on_toggle = on_toggle
-        self.on_press = on_press
-        self.on_release = on_release
+        def wrapped(kind, callback):
+            if callback is None and on_trigger is None:
+                return None
+            def invoke(source="hotkey"):
+                if on_trigger:
+                    on_trigger(kind, source)
+                elif callback:
+                    callback()
+            return invoke
+        self.on_toggle = wrapped("toggle", on_toggle)
+        self.on_press = wrapped("start", on_press)
+        self.on_release = wrapped("stop", on_release)
         self.on_notify_running = on_notify_running
         self.on_open_settings = on_open_settings
         self.is_running = False
+        self._stop_event = threading.Event()
+        self.on_status = on_status
+        self.hotkey_status = "idle"
         self._threads: List[threading.Thread] = []
         self._ipc_thread = None
         self._ipc_server = None
@@ -127,11 +143,22 @@ class HotkeyManager:
         self._macos_pressed_modifiers: Set[int] = set()
         self._macos_combo = None
 
+    @property
+    def hotkey_status(self):
+        return self._hotkey_status
+
+    @hotkey_status.setter
+    def hotkey_status(self, value):
+        changed = getattr(self, "_hotkey_status", None) != value
+        self._hotkey_status = value
+        if changed and self.on_status:
+            self.on_status(value)
+
     def start(self) -> bool:
         """Starts the platform IPC server and background hotkey listener."""
         if self.is_running:
             return True
-        if self._ipc_thread and self._ipc_thread.is_alive():
+        if any(thread.is_alive() for thread in self._threads):
             return False
 
         # ASVS 15.4.2: reserve the single-instance endpoint before starting listeners.
@@ -164,6 +191,7 @@ class HotkeyManager:
             return False
 
         self._ipc_server = server
+        self._stop_event.clear()
         self.is_running = True
 
         # 1. Start IPC Server (TCP on Windows, Unix domain socket on Linux/macOS)
@@ -173,8 +201,8 @@ class HotkeyManager:
         self._threads.append(ipc_thread)
 
         # 2. Start Global Hotkey Listener
-        if sys.platform.startswith("linux") and HAS_EVDEV:
-            evdev_thread = threading.Thread(target=self._run_evdev_listener, daemon=True)
+        if sys.platform.startswith("linux"):
+            evdev_thread = threading.Thread(target=self._run_linux_listener, daemon=True)
             evdev_thread.start()
             self._threads.append(evdev_thread)
         elif sys.platform == "darwin":
@@ -187,6 +215,7 @@ class HotkeyManager:
 
     def stop(self) -> None:
         self.is_running = False
+        self._stop_event.set()
         if self._pynput_listener:
             try:
                 self._pynput_listener.stop()
@@ -214,7 +243,7 @@ class HotkeyManager:
         for thread in self._threads:
             if thread is not self._ipc_thread and thread is not threading.current_thread():
                 thread.join(timeout=1.0)
-        self._threads.clear()
+        self._threads = [thread for thread in self._threads if thread.is_alive()]
 
     # --- IPC SERVER (TCP on Windows, Unix Domain Socket on POSIX) ---
     def _run_ipc_server(self, server: socket.socket) -> None:
@@ -226,21 +255,27 @@ class HotkeyManager:
                         # ASVS 16.5.2: a silent client must not block every IPC command.
                         conn.settimeout(1.0)
                         data = conn.recv(128).decode("utf-8").strip()
+                        if sys.platform.startswith("win"):
+                            prefix = f"{app_id()}:"
+                            if not data.startswith(prefix):
+                                conn.sendall(b"wrong-profile")
+                                continue
+                            data = data[len(prefix):]
                         if data == "toggle":
                             if self.on_toggle:
-                                self.on_toggle()
+                                self.on_toggle("ipc")
                             conn.sendall(b"ok")
                         elif data == "start":
                             if self.on_press:
-                                self.on_press()
+                                self.on_press("ipc")
                             elif self.on_toggle:
-                                self.on_toggle()
+                                self.on_toggle("ipc")
                             conn.sendall(b"ok")
                         elif data == "stop":
                             if self.on_release:
-                                self.on_release()
+                                self.on_release("ipc")
                             elif self.on_toggle:
-                                self.on_toggle()
+                                self.on_toggle("ipc")
                             conn.sendall(b"ok")
                         elif data == "ping":
                             conn.sendall(b"pong")
@@ -544,38 +579,88 @@ class HotkeyManager:
             if hasattr(ecodes, attr):
                 key_map[f"F{i}"] = {getattr(ecodes, attr)}
 
-        keyboards = []
+        keyboards = {}
+        parts = [part.strip().upper() for part in self.hotkey_str.split("+")]
+        next_scan = 0.0
         try:
-            for path in evdev.list_devices():
+            while self.is_running:
+                if time.monotonic() >= next_scan:
+                    try:
+                        paths = set(evdev.list_devices())
+                    except Exception:
+                        paths = set()
+                    for path in set(keyboards) - paths:
+                        keyboards.pop(path).close()
+                        self._active_keys.clear()
+                        if self._combo_triggered:
+                            self._handle_evdev_key(-1, 0, parts, key_map)
+                    for path in paths - set(keyboards):
+                        device = None
+                        try:
+                            device = evdev.InputDevice(path)
+                            caps = device.capabilities().get(ecodes.EV_KEY, [])
+                            if "ydotool" in device.name.lower() or ecodes.KEY_A not in caps:
+                                device.close()
+                                continue
+                            keyboards[path] = device
+                        except Exception:
+                            if device:
+                                device.close()
+                    next_scan = time.monotonic() + 2
+                    self.hotkey_status = "evdev_active" if keyboards else "ipc_only"
+                if not keyboards:
+                    self._stop_event.wait(.25)
+                    continue
                 try:
-                    dev = evdev.InputDevice(path)
-                    name_lower = dev.name.lower()
-                    if "ydotool" in name_lower:
-                        continue
-                    caps = dev.capabilities()
-                    if ecodes.EV_KEY in caps:
-                        keyboards.append(dev)
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[Hotkey] Error discovering evdev devices: {e}")
+                    readable, _, _ = select.select(list(keyboards.values()), [], [], .25)
+                except (OSError, ValueError):
+                    for device in keyboards.values():
+                        device.close()
+                    keyboards.clear()
+                    self._active_keys.clear()
+                    self._stop_event.wait(.25)
+                    continue
+                for device in readable:
+                    try:
+                        for event in device.read():
+                            if event.type == ecodes.EV_KEY:
+                                self._handle_evdev_key(event.code, event.value, parts, key_map)
+                    except OSError:
+                        device.close()
+                        keyboards = {path: item for path, item in keyboards.items() if item is not device}
+                        self._active_keys.clear()
+                        if self._combo_triggered:
+                            self._handle_evdev_key(-1, 0, parts, key_map)
+        finally:
+            for device in keyboards.values():
+                device.close()
+            self.hotkey_status = "stopped"
+
+    def _run_linux_listener(self):
+        if not self.hotkey_str:
+            self.hotkey_status = "ipc_only"
             return
-
-        if not keyboards:
-            print("[Hotkey] No suitable keyboard devices found for evdev.")
-            return
-
-        parts = [p.strip().upper() for p in self.hotkey_str.split("+")]
-
-        while self.is_running:
+        if os.environ.get("XDG_SESSION_TYPE") == "wayland":
             try:
-                r, _, _ = select.select(keyboards, [], [], 0.5)
-                for dev in r:
-                    for event in dev.read():
-                        if event.type == ecodes.EV_KEY:
-                            self._handle_evdev_key(event.code, event.value, parts, key_map)
-            except Exception:
+                import asyncio
+                from .platform.shortcuts import ShortcutPortal, PortalUnavailable
+                def press():
+                    callback = self.on_press if self.trigger_mode == "push_to_talk" else self.on_toggle
+                    if callback:
+                        callback()
+                def release():
+                    if self.trigger_mode == "push_to_talk" and self.on_release:
+                        self.on_release()
+                portal = ShortcutPortal(self.hotkey_str, press, release, self._stop_event,
+                                        lambda status: setattr(self, "hotkey_status", status))
+                asyncio.run(portal.run())
+                return  # Permission denial does not fall through to raw-device access.
+            except (ImportError, PortalUnavailable):
                 pass
+        if HAS_EVDEV and self.is_running:
+            self._run_evdev_listener()
+        else:
+            self.hotkey_status = "ipc_only"
 
     def _handle_evdev_key(self, code: int, value: int, combo_parts: List[str], key_map: dict) -> None:
         with self._lock:
@@ -624,7 +709,7 @@ def send_ipc_message(message: str, timeout: float = 1.0) -> Optional[str]:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
                 client.settimeout(timeout)
                 client.connect(("127.0.0.1", TCP_PORT))
-                client.sendall(message.encode("utf-8"))
+                client.sendall(f"{app_id()}:{message}".encode("utf-8"))
                 return client.recv(128).decode("utf-8").strip()
         except Exception:
             return None

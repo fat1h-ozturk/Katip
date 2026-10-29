@@ -33,6 +33,7 @@ def block_desktop_side_effects(monkeypatch):
         raise AssertionError("Tests must mock desktop devices and HTTP requests")
 
     monkeypatch.setattr(requests.Session, "request", deny)
+    monkeypatch.setattr("katip.infrastructure.http_transport.HttpSession.request", deny)
     monkeypatch.setattr(pyaudio, "PyAudio", deny)
     for backend in (injector.LinuxInjector, injector.WindowsInjector, injector.MacInjector):
         monkeypatch.setattr(backend, "set_clipboard", deny)
@@ -41,6 +42,7 @@ def block_desktop_side_effects(monkeypatch):
     monkeypatch.setattr(hotkey.HotkeyManager, "_start_pynput_listener", deny)
     monkeypatch.setattr(hotkey.HotkeyManager, "_start_macos_listener", deny)
     monkeypatch.setattr(hotkey.HotkeyManager, "_run_evdev_listener", deny)
+    monkeypatch.setattr(hotkey.HotkeyManager, "_run_linux_listener", lambda self: None)
 
 
 @pytest.fixture

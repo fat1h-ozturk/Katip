@@ -1,3 +1,8 @@
 -r requirements.txt
 # ASVS 15.2.3: keep the test runner out of runtime dependencies.
 pytest>=8.0.0
+
+pytest-cov>=6.0.0
+psutil>=6.0.0
+ruff>=0.17.0
+mypy>=1.15.0

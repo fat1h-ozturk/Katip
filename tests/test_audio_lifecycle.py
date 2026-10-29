@@ -43,6 +43,7 @@ def test_failed_capture_notifies_and_retains_audio():
             return chunk
 
         stream.read.side_effect = recovered_read
+        recorder.discard_audio()
         recorder.start_recording()
         try:
             assert entered.wait(1)
@@ -89,6 +90,8 @@ def test_blocked_worker_cannot_restart_or_lose_frames():
             release.set()
             worker.join(1)
         assert recorder.stop_recording().startswith(b"RIFF")
+        assert recorder.has_pending_audio
+        recorder.discard_audio()
         assert not recorder.has_pending_audio
         recorder.terminate()
 

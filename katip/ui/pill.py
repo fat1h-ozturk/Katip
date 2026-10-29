@@ -6,7 +6,7 @@ Renders an animated, draggable, glassmorphic pill widget indicating recording, a
 import math
 import sys
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 from ..kde import OVERLAY_TITLE, ensure_overlay_rule
 
@@ -144,9 +144,9 @@ class FloatingPill(QWidget):
         self._anim_timer.stop()
         self.state = "success"
         if latency > 0:
-            self.status_message = f"Yapıştırıldı! ({latency}s)"
+            self.status_message = f"Girdi gönderildi! ({latency}s)"
         else:
-            self.status_message = "Yapıştırıldı!"
+            self.status_message = "Girdi gönderildi!"
         self._show_overlay()
         self._hide_timer.start(1600)
 

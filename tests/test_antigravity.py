@@ -41,24 +41,25 @@ def test_antigravity_transcribe_and_format(failure):
     elif failure == "empty_output":
         answer = ""
 
-    with patch("katip.services.antigravity.requests.post", return_value=MagicMock(status_code=200, text="Ham transkript")):
+    with patch("katip.services.antigravity.http_post", return_value=MagicMock(status_code=200, text="Ham transkript")):
         if failure == "not_found":
-            with patch("katip.services.antigravity.subprocess.run", side_effect=FileNotFoundError()):
+            with patch("katip.services.antigravity.run_process", side_effect=FileNotFoundError()):
                 result = AntigravityService("groq", "secret", "whisper", "pro").transcribe_and_format(b"fake")
             assert result.formatted_text is None
             assert "bulunamadı" in result.warning
         elif failure == "timeout":
-            with patch("katip.services.antigravity.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="agy", timeout=60)):
+            with patch("katip.services.antigravity.run_process", side_effect=subprocess.TimeoutExpired(cmd="agy", timeout=60)):
                 result = AntigravityService("groq", "secret", "whisper", "pro").transcribe_and_format(b"fake")
             assert result.formatted_text is None
             assert "Zaman aşımı" in result.warning
         elif failure == "error_code":
-            with patch("katip.services.antigravity.subprocess.run", return_value=MagicMock(returncode=1, stderr="Model unavailable")):
+            with patch("katip.services.antigravity.run_process", return_value=MagicMock(returncode=1, stderr="Model unavailable")):
                 result = AntigravityService("groq", "secret", "whisper", "pro").transcribe_and_format(b"fake")
             assert result.formatted_text is None
-            assert "Model unavailable" in result.warning
+            assert "Model unavailable" not in result.warning
+            assert result.warning
         else:
-            with patch("katip.services.antigravity.subprocess.run", return_value=MagicMock(returncode=0, stdout=answer)) as mock_run:
+            with patch("katip.services.antigravity.run_process", return_value=MagicMock(returncode=0, stdout=answer)) as mock_run:
                 result = AntigravityService("groq", "secret", "whisper", "pro").transcribe_and_format(b"fake")
             cmd = mock_run.call_args.args[0]
             assert "--new-project" in cmd
@@ -72,8 +73,9 @@ def test_antigravity_transcribe_and_format(failure):
                 assert result.formatted_text == "Türkçe: test metni."
                 assert result.warning == ""
             elif failure == "malformed":
-                assert result.formatted_text == "Düz metin cevabı"
-                assert result.warning == ""
+                assert result.formatted_text is None
+                assert result.text == "Ham transkript"
+                assert result.warning
             else:
                 assert result.formatted_text is None
                 assert "ayrıştırılamadı" in result.warning

@@ -4,14 +4,16 @@ Captures 16kHz 16-bit mono PCM audio in memory and reports real-time audio volum
 Includes WebRTC VAD (Voice Activity Detection) silence trimming and peak audio normalization.
 """
 
+from array import array
 import contextlib
 import ctypes
 import io
 import math
-import struct
 import sys
 import threading
 import wave
+from .diagnostics import Diagnostics
+from .domain.errors import CaptureError
 from typing import Callable, Optional
 import pyaudio
 
@@ -52,6 +54,7 @@ def no_alsa_err():
 def get_input_devices() -> list:
     """Returns available audio input devices for configuration."""
     devices = []
+    pa = None
     try:
         with no_alsa_err():
             pa = pyaudio.PyAudio()
@@ -74,9 +77,12 @@ def get_input_devices() -> list:
                         })
                 except Exception:
                     pass
-            pa.terminate()
     except Exception:
         pass
+    finally:
+        if pa is not None:
+            with contextlib.suppress(Exception):
+                pa.terminate()
     return devices
 
 
@@ -87,6 +93,8 @@ class AudioRecorder:
     CHANNELS = 1
     CHUNK_SIZE = 1024
     FORMAT = pyaudio.paInt16
+    MAX_SECONDS = 600
+    MAX_BYTES = 64 * 1024 * 1024
 
     def __init__(self, on_level_callback: Optional[Callable[[float], None]] = None, device_index: int = -1, vad_mode: int = 2,
                  on_error_callback: Optional[Callable[[str], None]] = None):
@@ -99,14 +107,16 @@ class AudioRecorder:
         self.last_error = ""
         self._thread: Optional[threading.Thread] = None
         self._frames = []
+        self._capture_pcm = b""
+        self._captured_bytes = 0
+        self.diagnostics = Diagnostics()
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._terminated = False
         self._pyaudio: Optional[pyaudio.PyAudio] = None
         self._stream: Optional[pyaudio.Stream] = None
         self._vad = webrtcvad.Vad(self.vad_mode) if _HAS_WEBRTC_VAD else None
-        # Warm-up PyAudio once on initialization to eliminate ALSA probe latency
-        self._ensure_pyaudio()
+        # The capture worker initializes PortAudio; GUI construction never probes a device.
 
     def _ensure_pyaudio(self) -> Optional[pyaudio.PyAudio]:
         """Ensures PyAudio instance is warm and ready without device re-probing."""
@@ -114,8 +124,8 @@ class AudioRecorder:
             try:
                 with no_alsa_err():
                     self._pyaudio = pyaudio.PyAudio()
-            except Exception as e:
-                print(f"[Audio] PyAudio init error: {e}")
+            except Exception:
+                self.diagnostics.event("failed", stage="capture", code="CAPTURE_INITIALIZATION")
         return self._pyaudio
 
     def start_recording(self) -> None:
@@ -125,20 +135,27 @@ class AudioRecorder:
                 return
             # ASVS 15.4.1: never reuse recording state while a driver call is pending.
             if self._terminated or (self._thread and self._thread.is_alive()):
-                raise RuntimeError("Mikrofon henüz kapanmadı; lütfen tekrar deneyin.")
-            if self._frames:
-                raise RuntimeError("Önceki ses kaydı henüz alınmadı.")
+                raise CaptureError("Mikrofon henüz kapanmadı; lütfen tekrar deneyin.")
+            if self._frames or self._capture_pcm:
+                raise CaptureError("Önceki ses kaydı henüz alınmadı.")
             self.is_recording = True
             self.last_error = ""
+            self._captured_bytes = 0
+            self.diagnostics.event("recording_started", stage="capture")
             self._stop = threading.Event()
             self._thread = threading.Thread(target=self._record_loop, args=(self._stop,), daemon=True)
             self._thread.start()
 
     @property
+    def is_capturing(self) -> bool:
+        with self._lock:
+            return bool(self._thread and self._thread.is_alive())
+
+    @property
     def has_pending_audio(self) -> bool:
         """Include a timed-out worker and undrained frames in recovery checks."""
         with self._lock:
-            return bool(self._frames or (self._thread and self._thread.is_alive()))
+            return bool(self._frames or self._capture_pcm or (self._thread and self._thread.is_alive()))
 
     def stop_recording(self) -> bytes:
         """Stop and drain audio, including frames retained after a capture error."""
@@ -146,15 +163,62 @@ class AudioRecorder:
             self.is_recording = False
             self._stop.set()
             worker = self._thread
+        self.diagnostics.event("stop_requested", stage="capture")
         if worker and worker is not threading.current_thread():
             worker.join(timeout=2.0)
             if worker.is_alive():
-                raise RuntimeError("Mikrofon durdurulamadı; kayıt korunuyor. Lütfen tekrar deneyin.")
+                self.diagnostics.event("failed", stage="capture", code="CAPTURE_DRAIN_TIMEOUT")
+                raise CaptureError("[CAPTURE_DRAIN_TIMEOUT] Mikrofon durdurulamadı; kayıt korunuyor. Lütfen tekrar deneyin.")
         with self._lock:
-            # Clear only after successful encoding, so failures preserve the recording.
-            audio = self._encode_wav(self._frames)
+            if not self._frames:
+                return b""
+            self._capture_pcm = b"".join(self._frames)
             self._frames = []
+            pcm = self._capture_pcm
+        self.diagnostics.event("capture_stopped", stage="capture", audio_bytes=len(pcm))
+        if self.last_error:
+            return self._wav(pcm, self._actual_rate)
+        self.diagnostics.event("preprocessing_started", stage="preprocessing")
+        audio = self._encode_wav([pcm])
+        self.diagnostics.event("preprocessing_finished", stage="preprocessing", audio_bytes=len(audio))
+        if not audio:
+            raise CaptureError("[VAD_REJECTED] Ses filtresi konuşma bulamadı; ham kayıt korunuyor. Sesi kaydedebilir veya filtresiz yeniden deneyebilirsiniz.")
         return audio
+
+    def raw_wav(self) -> bytes:
+        """Export the original samples at their actual sample rate, without DSP."""
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise CaptureError("Mikrofon henüz kapanmadı; kayıt korunuyor.")
+            pcm = self._capture_pcm or b"".join(self._frames)
+        return self._wav(pcm, self._actual_rate) if pcm else b""
+
+    def discard_audio(self) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise CaptureError("Mikrofon henüz kapanmadı; kayıt korunuyor.")
+            self._frames = []
+            self._capture_pcm = b""
+            self._captured_bytes = 0
+
+    def retry_audio(self, filtered=True) -> bytes:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                raise CaptureError("Mikrofon henüz kapanmadı; kayıt korunuyor.")
+            pcm = self._capture_pcm or b"".join(self._frames)
+        if filtered:
+            return self._encode_wav([pcm])
+        return self._wav(self._resample_pcm(pcm, self._actual_rate), self.SAMPLE_RATE) if pcm else b""
+
+    @staticmethod
+    def _wav(pcm, rate):
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(rate)
+            wf.writeframes(pcm)
+        return buf.getvalue()
 
     def _record_loop(self, stop: threading.Event) -> None:
         stream = None
@@ -162,7 +226,7 @@ class AudioRecorder:
         try:
             pa = self._ensure_pyaudio()
             if pa is None:
-                raise RuntimeError("Mikrofon başlatılamadı.")
+                raise CaptureError("Mikrofon başlatılamadı.")
             stream_kwargs = {
                 "format": self.FORMAT, "channels": self.CHANNELS,
                 "input": True, "frames_per_buffer": self.CHUNK_SIZE,
@@ -184,12 +248,25 @@ class AudioRecorder:
             while not stop.is_set():
                 data = stream.read(self.CHUNK_SIZE, exception_on_overflow=False)
                 with self._lock:
-                    self._frames.append(data)
+                    limit = min(self.MAX_BYTES, self.MAX_SECONDS * self._actual_rate * 2)
+                    remaining = max(0, limit - self._captured_bytes)
+                    kept = data[:remaining - remaining % 2]
+                    if kept:
+                        self._frames.append(kept)
+                        self._captured_bytes += len(kept)
+                    reached_limit = self._captured_bytes >= limit
+                if reached_limit:
+                    error = "[CAPTURE_LIMIT] Kayıt 10 dakika veya 64 MiB sınırına ulaştı; alınan ses korunuyor."
+                    self.diagnostics.event("failed", stage="capture", code="CAPTURE_LIMIT")
+                    break
                 if self.on_level_callback and data:
                     self.on_level_callback(min(1.0, self._compute_rms(data) * 4.0))
-        except Exception:
+        except Exception as exc:
             if not stop.is_set():
-                error = "Mikrofon kaydı kesildi. Mikrofon bağlantısını ve izinlerini kontrol edin."
+                code = "CAPTURE_DEVICE_LOST" if isinstance(exc, OSError) and getattr(exc, "errno", None) in (-9985, -9996, 19) else "CAPTURE_READ_ERROR"
+                self.diagnostics.event("failed", stage="capture", code=code,
+                                       exception_type=type(exc).__name__, errno=getattr(exc, "errno", 0) or 0)
+                error = f"[{code}] Mikrofon kaydı kesildi; alınan ses korunuyor. Mikrofon bağlantısını ve izinlerini kontrol edin."
         finally:
             if stream is not None:
                 try:
@@ -234,129 +311,76 @@ class AudioRecorder:
             self._terminate_pyaudio()
 
     def _resample_pcm(self, raw_bytes: bytes, in_rate: int, out_rate: int = 16000) -> bytes:
-        """Simple decimation/resampling for STT fallback support."""
         if in_rate == out_rate or not raw_bytes:
             return raw_bytes
-        
-        count = len(raw_bytes) // 2
+        # soxr applies anti-alias filtering; never label unconverted samples as 16 kHz.
         try:
-            samples = struct.unpack(f"<{count}h", raw_bytes)
-            # Basic nearest-neighbor / drop decimation
-            ratio = in_rate / out_rate
-            out_samples = []
-            for i in range(int(count / ratio)):
-                idx = int(i * ratio)
-                if idx < count:
-                    out_samples.append(samples[idx])
-            return struct.pack(f"<{len(out_samples)}h", *out_samples)
-        except Exception as e:
-            print(f"[Audio] Downsampling error: {e}")
-            return raw_bytes
+            import numpy as np
+            import soxr
+            samples = np.frombuffer(raw_bytes, dtype="<i2")
+            return soxr.resample(samples, in_rate, out_rate, quality="HQ").astype("<i2").tobytes()
+        except Exception:
+            raise CaptureError("[RESAMPLE_FAILED] Ses dönüştürülemedi; ham kayıt korunuyor.") from None
+
+    @staticmethod
+    def _samples(data):
+        values = array("h")
+        values.frombytes(data)
+        if sys.byteorder != "little":
+            values.byteswap()
+        return values
 
     def _process_dsp(self, raw_pcm: bytes, padding_ms: int = 300) -> bytes:
-        """
-        Applies Noise Gating (silencing non-speech frames) and 
-        Automatic Gain Control (AGC) on speech blocks.
-        """
         if not raw_pcm or not self._vad:
             return self._normalize_pcm(raw_pcm)
-
-        frame_duration_ms = 30
-        frame_size = int(self.SAMPLE_RATE * (frame_duration_ms / 1000.0) * 2)
-        total_frames = len(raw_pcm) // frame_size
-        if total_frames == 0:
-            return raw_pcm
-
-        speech_flags = []
-        for i in range(total_frames):
-            frame = raw_pcm[i * frame_size : (i + 1) * frame_size]
+        frame_size = self.SAMPLE_RATE * 30 // 1000 * 2
+        # Pad only for the detector; retain the original final partial frame.
+        frame_count = (len(raw_pcm) + frame_size - 1) // frame_size
+        flags = []
+        for i in range(frame_count):
+            frame = raw_pcm[i * frame_size:(i + 1) * frame_size]
             try:
-                is_speech = self._vad.is_speech(frame, self.SAMPLE_RATE)
+                flags.append(self._vad.is_speech(frame.ljust(frame_size, b"\0"), self.SAMPLE_RATE))
             except Exception:
-                is_speech = True
-            speech_flags.append(is_speech)
-
-        if not any(speech_flags):
-            print("[Audio] VAD: Belirgin konuşma bayrağı bulunamadı, sessizlik atlanıyor.")
+                flags.append(True)
+        if not any(flags):
             return b""
-
-        # Noise Gating: Zero out silence that is far from speech
-        padding_frames = int(padding_ms / frame_duration_ms)
-        gated_frames = []
-        
-        # Keep track of first and last speech to trim edges
-        first_speech = speech_flags.index(True)
-        last_speech = len(speech_flags) - 1 - speech_flags[::-1].index(True)
-        
-        # We only care about the segment between first_speech-padding and last_speech+padding
-        start_frame = max(0, first_speech - padding_frames)
-        end_frame = min(total_frames, last_speech + 1 + padding_frames)
-        
-        active_speech_samples = []
-        zero_frame = b"\x00" * frame_size
-
-        for i in range(start_frame, end_frame):
-            frame = raw_pcm[i * frame_size : (i + 1) * frame_size]
-            
-            # Check if this frame is within padding distance of ANY speech frame
-            # To be efficient, just check the local window
-            local_start = max(0, i - padding_frames)
-            local_end = min(total_frames, i + padding_frames + 1)
-            is_near_speech = any(speech_flags[local_start:local_end])
-            
-            if is_near_speech:
-                gated_frames.append(frame)
-                active_speech_samples.extend(struct.unpack(f"<{len(frame)//2}h", frame))
-            else:
-                gated_frames.append(zero_frame)
-
-        gated_pcm = b"".join(gated_frames)
-        
-        # Automatic Gain Control (AGC) - calculate gain based on active speech only, not silence
-        target_peak = 24000
-        if active_speech_samples:
-            peak = max(abs(s) for s in active_speech_samples)
-            if peak > 20 and peak < target_peak:
-                gain = min(12.0, target_peak / peak)
-                count = len(gated_pcm) // 2
-                samples = struct.unpack(f"<{count}h", gated_pcm)
-                norm_samples = [max(-32768, min(32767, int(s * gain))) for s in samples]
-                gated_pcm = struct.pack(f"<{count}h", *norm_samples)
-                print(f"[Audio] AGC uygulandı: Peak={peak}, Gain={gain:.2f}x")
-
-        return gated_pcm
-
+        padding = padding_ms // 30
+        first = max(0, flags.index(True) - padding)
+        last = min(frame_count, len(flags) - flags[::-1].index(True) + padding)
+        output = bytearray()
+        for i in range(first, last):
+            frame = raw_pcm[i * frame_size:(i + 1) * frame_size]
+            near = any(flags[max(0, i - padding):min(frame_count, i + padding + 1)])
+            output.extend(frame if near else b"\0" * len(frame))
+        return self._normalize_pcm(bytes(output))
 
     def _compute_rms(self, raw_bytes: bytes) -> float:
-        """Computes Root Mean Square (RMS) audio level of PCM data (0.0 to 1.0)."""
-        if not raw_bytes:
-            return 0.0
         count = len(raw_bytes) // 2
-        try:
-            samples = struct.unpack(f"<{count}h", raw_bytes)
-            if not samples:
-                return 0.0
-            sum_sq = sum(s * s for s in samples)
-            return math.sqrt(sum_sq / len(samples)) / 32768.0
-        except Exception:
+        if not count:
             return 0.0
+        total = 0
+        for offset in range(0, count * 2, 8192):
+            values = self._samples(raw_bytes[offset:min(offset + 8192, count * 2)])
+            total += sum(value * value for value in values)
+        return math.sqrt(total / count) / 32768.0
 
     def _normalize_pcm(self, raw_bytes: bytes, target_peak: int = 24000) -> bytes:
-        """Normalizes audio volume so quiet microphones are loud and clear for STT models."""
-        if not raw_bytes:
+        peak = 0
+        for offset in range(0, len(raw_bytes), 8192):
+            values = self._samples(raw_bytes[offset:offset + 8192])
+            peak = max(peak, max((abs(value) for value in values), default=0))
+        if not 20 < peak < target_peak:
             return raw_bytes
-        count = len(raw_bytes) // 2
-        try:
-            samples = struct.unpack(f"<{count}h", raw_bytes)
-            peak = max(abs(s) for s in samples) if samples else 0
-            if peak > 20 and peak < target_peak:
-                # Limit max gain to 12.0x for very quiet mics
-                gain = min(12.0, target_peak / peak)
-                norm_samples = [max(-32768, min(32767, int(s * gain))) for s in samples]
-                return struct.pack(f"<{count}h", *norm_samples)
-        except Exception:
-            pass
-        return raw_bytes
+        gain = min(12.0, target_peak / peak)
+        output = bytearray()
+        for offset in range(0, len(raw_bytes), 8192):
+            values = self._samples(raw_bytes[offset:offset + 8192])
+            scaled = array("h", (max(-32768, min(32767, int(value * gain))) for value in values))
+            if sys.byteorder != "little":
+                scaled.byteswap()
+            output.extend(scaled.tobytes())
+        return bytes(output)
 
     def _encode_wav(self, frames: list) -> bytes:
         """

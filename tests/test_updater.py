@@ -1,46 +1,31 @@
-import re
-from unittest.mock import Mock, patch
-import pytest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
+import pytest
 from PySide6.QtWidgets import QApplication
-from katip import __version__
+from katip.app import KatipApp
 from katip.ui.toast import UpdateNotificationToast
 
 _app = QApplication.instance() or QApplication([])
 
 
-def parse_v(v: str):
-    return [int(x) for x in re.findall(r"\d+", v)]
-
-
-def test_version_comparison():
-    assert parse_v("v0.4.1") > parse_v("0.4.0")
-    assert parse_v("v1.0.0") > parse_v("0.4.0")
-    assert not (parse_v("v0.4.0") > parse_v("0.4.0"))
-    assert not (parse_v("v0.3.9") > parse_v("0.4.0"))
-
-
-def test_update_checker_worker_emits_when_newer(tmp_path, monkeypatch):
-    import katip.app as app_module
-    from katip.app import KatipApp
-
-    mock_resp = Mock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {
-        "tag_name": "v99.0.0",
-        "html_url": "https://github.com/fat1h-ozturk/Katip/releases/tag/v99.0.0"
-    }
-
-    monkeypatch.setattr("requests.get", Mock(return_value=mock_resp))
-
-    # Test toast creation without crashing
-    toast = UpdateNotificationToast("v99.0.0", "https://github.com/fat1h-ozturk/Katip/releases/tag/v99.0.0")
-    assert toast.new_version == "v99.0.0"
-    toast.close()
+@pytest.mark.parametrize('tag,expected', [('v99.0.0', True), ('v0.4.6', False),
+    ('v0.3.9', False), ('v0.4.6-rc99', False), ('malformed', False)])
+def test_update_checker_worker_emits_only_for_newer_stable_release(monkeypatch, tag, expected):
+    url = 'https://github.com/fat1h-ozturk/Katip/releases/tag/v99.0.0'
+    response = Mock(status_code=200, json=lambda: {'tag_name': tag, 'html_url': url})
+    get = Mock(return_value=response)
+    monkeypatch.setattr('requests.get', get)
+    app = object.__new__(KatipApp)
+    app.signals = SimpleNamespace(update_available=Mock())
+    app._update_checker_worker()
+    get.assert_called_once()
+    assert app.signals.update_available.emit.called is expected
+    if expected:
+        app.signals.update_available.emit.assert_called_once_with(tag, url)
 
 
 def test_open_url_handles_clean_env(monkeypatch):
-    import os
     import sys
     from katip.desktop import open_url
 
@@ -63,8 +48,6 @@ def test_open_url_handles_clean_env(monkeypatch):
 
 
 def test_toast_download_triggers_open_url(monkeypatch):
-    from katip.desktop import open_url
-
     urls_opened = []
     monkeypatch.setattr("katip.ui.toast.open_url", lambda url: urls_opened.append(url))
 

@@ -1,0 +1,91 @@
+name: Reliability checks
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reliability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            python: '3.10'
+          - os: ubuntu-24.04
+            python: '3.11'
+          - os: ubuntu-24.04
+            python: '3.14'
+          - os: windows-latest
+            python: '3.11'
+          - os: macos-15
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+          python-version: ${{ matrix.python }}
+      - name: Linux audio and Qt dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libegl1 libgl1 libxkbcommon-x11-0
+      - name: macOS audio dependency
+        if: runner.os == 'macOS'
+        run: brew install portaudio
+      - name: Install locked environment
+        if: runner.os != 'macOS'
+        run: uv sync --locked --group dev
+      - name: Install locked macOS environment
+        if: runner.os == 'macOS'
+        run: CFLAGS="-I$(brew --prefix portaudio)/include" LDFLAGS="-L$(brew --prefix portaudio)/lib" uv sync --locked --group dev
+      - name: Lint and type-check core contracts
+        run: |
+          uv run --no-sync ruff check katip
+          uv run --no-sync mypy
+      - name: Isolated regression tests
+        run: uv run --no-sync pytest -q --cov=katip --cov-branch --cov-report=term-missing --cov-report=json:coverage.json
+      - name: Gate new lifecycle, diagnostics and HTTP branches
+        shell: bash
+        run: |
+          uv run --no-sync python - <<'PY'
+          import json
+          raw = json.load(open('coverage.json', encoding='utf-8'))['files']
+          files = {path.replace('\\', '/'): value for path, value in raw.items()}
+          paths = ('katip/application/session.py', 'katip/diagnostics.py', 'katip/infrastructure/http_transport.py')
+          for path in paths:
+              summary = files[path]['summary']
+              branches = summary['covered_branches'] / max(1, summary['num_branches']) * 100
+              lines = summary['covered_lines'] / summary['num_statements'] * 100
+              print(f'{path}: lines={lines:.1f}%, branches={branches:.1f}%')
+              if min(lines, branches) < 90:
+                  raise SystemExit('New core contract coverage must stay at or above 90%')
+          PY
+      - name: CLI smoke test
+        run: uv run --no-sync python -m katip --version
+      - name: Build candidate package
+        if: matrix.python == '3.11'
+        run: uv run --no-sync pyinstaller katip.spec --clean --noconfirm
+      - name: Packaged CLI smoke test
+        if: matrix.python == '3.11' && runner.os == 'Linux'
+        run: dist/Katip --version
+      - name: Packaged CLI smoke test (macOS)
+        if: matrix.python == '3.11' && runner.os == 'macOS'
+        run: dist/Katip.app/Contents/MacOS/Katip --version
+      - name: Packaged CLI smoke test (Windows)
+        if: matrix.python == '3.11' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath (Resolve-Path 'dist/Katip.exe').Path -ArgumentList '--version' -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Packaged CLI timed out' }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) { throw 'Packaged CLI failed' }

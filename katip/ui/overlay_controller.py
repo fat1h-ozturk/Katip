@@ -1,84 +1,112 @@
-"""
-Controller for the Wayland Layer Shell Overlay.
-Launches and communicates with the GTK4 layer shell overlay process.
-"""
-
+"""Optional layer-shell helper with an asynchronous ready handshake and Qt fallback."""
+import importlib.util
 import os
-import subprocess
 import sys
 from ctypes.util import find_library
-from typing import Optional
 
-class LayerOverlayController:
-    """Manages the lifecycle and IPC commands to the Wayland Layer Shell overlay."""
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
-    def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
-        self.current_mode = "dictation"
-        self._start_overlay()
 
-    def _start_overlay(self) -> None:
-        """Starts the GTK4 layer shell overlay process."""
-        env = dict(os.environ)
-        layer_so = find_library("gtk4-layer-shell")
-        if layer_so:
-            cur_preload = env.get("LD_PRELOAD", "")
-            env["LD_PRELOAD"] = f"{layer_so}:{cur_preload}" if cur_preload else layer_so
-
-        cmd = [sys.executable, "-m", "katip.ui.overlay_gtk"]
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env,
-                text=True,
-                bufsize=1
-            )
-        except Exception as e:
-            print(f"[Overlay] Failed to start layer shell overlay: {e}")
-            self.process = None
-
-    def _send_cmd(self, cmd: str) -> None:
-        if not self.process or self.process.poll() is not None:
+class LayerOverlayController(QObject):
+    def __init__(self, fallback):
+        super().__init__()
+        self.fallback = fallback
+        self.clicked = fallback.clicked
+        self.current_mode = 'dictation'
+        self.process = None
+        self._closing = False
+        self._ready = False
+        self._last = None
+        self._stdout = bytearray()
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._failed)
+        if (os.environ.get('XDG_SESSION_TYPE') == 'wayland'
+                and os.environ.get('QT_QPA_PLATFORM') != 'offscreen'
+                and find_library('gtk4-layer-shell') and importlib.util.find_spec('gi')):
             self._start_overlay()
 
-        if self.process and self.process.stdin:
-            try:
-                self.process.stdin.write(f"{cmd}\n")
-                self.process.stdin.flush()
-            except Exception:
-                pass
+    def _start_overlay(self):
+        process = QProcess(self)
+        env = QProcessEnvironment.systemEnvironment()
+        layer = find_library('gtk4-layer-shell')
+        if layer:
+            existing = env.value('LD_PRELOAD')
+            env.insert('LD_PRELOAD', f'{layer}:{existing}' if existing else layer)
+        process.setProcessEnvironment(env)
+        process.readyReadStandardOutput.connect(self._read_ready)
+        process.readyReadStandardError.connect(lambda: process.readAllStandardError())
+        process.errorOccurred.connect(self._failed)
+        process.finished.connect(self._failed)
+        self.process = process
+        # A frozen executable is a bootloader, not a Python interpreter.
+        args = ['--internal-overlay'] if getattr(sys, 'frozen', False) else ['-m', 'katip', '--internal-overlay']
+        process.start(sys.executable, args)
+        self._timer.start(1500)
 
-    def show_recording(self, mode: str) -> None:
+    def _read_ready(self):
+        if not self.process:
+            return
+        self._stdout.extend(bytes(self.process.readAllStandardOutput()))
+        if len(self._stdout) > 1024:
+            self._failed()
+            return
+        if b'READY\n' in self._stdout:
+            self._ready = True
+            self._timer.stop()
+            if self._last:
+                self._send_cmd(self._last)
+
+    def _failed(self, *_):
+        if self._closing:
+            return
+        self._ready = False
+        self._timer.stop()
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
+            self.process.kill()
+        # The Qt indicator has retained its current state throughout.
+        if self._last and self._last != 'HIDE' and self.fallback.state != 'hidden':
+            self.fallback._show_overlay()
+
+    def _send_cmd(self, command):
+        self._last = command
+        if self._ready and self.process and self.process.state() == QProcess.ProcessState.Running:
+            if self.process.write((command + '\n').encode('utf-8')) >= 0:
+                self.fallback.hide()
+
+    def show_recording(self, mode):
         self.current_mode = mode
-        self._send_cmd(f"RECORDING {mode}")
+        self.fallback.show_recording(mode)
+        self._send_cmd(f'RECORDING {mode}')
 
-    def show_processing(self) -> None:
-        self._send_cmd("PROCESSING")
+    def show_processing(self):
+        self.fallback.show_processing()
+        self._send_cmd('PROCESSING')
 
-    def show_success(self, latency: float = 0.0) -> None:
-        self._send_cmd(f"SUCCESS {latency}")
+    def show_success(self, latency=0.0):
+        self.fallback.show_success(latency)
+        self._send_cmd(f'SUCCESS {latency}')
 
-    def show_error(self, message: str) -> None:
-        self._send_cmd(f"ERROR {' '.join(message.splitlines())}")
+    def show_error(self, message):
+        self.fallback.show_error(message)
+        self._send_cmd('ERROR ' + ' '.join(message.splitlines())[:300])
 
-    def hide_pill(self) -> None:
-        self._send_cmd("HIDE")
+    def hide_pill(self):
+        self.fallback.hide_pill()
+        self._send_cmd('HIDE')
 
-    def set_mode(self, mode: str) -> None:
+    def set_mode(self, mode):
         self.current_mode = mode
+        self.fallback.set_mode(mode)
 
-    def set_audio_level(self, level: float) -> None:
-        # Audio level metering can be passed or ignored by layer pill
-        pass
+    def set_audio_level(self, level):
+        self.fallback.set_audio_level(level)
 
-    def close(self) -> None:
-        if self.process and self.process.poll() is None:
-            try:
-                self._send_cmd("QUIT")
-                self.process.terminate()
-            except Exception:
-                pass
-            self.process = None
+    def close(self):
+        self._closing = True
+        self._last = None
+        self._timer.stop()
+        if self.process:
+            self.process.kill()
+            # QProcess owns reaping; never wait for a subprocess on the GUI thread.
+        self.fallback.close()

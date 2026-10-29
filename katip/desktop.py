@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from .runtime import profile
 from typing import Optional
 
 def get_project_root() -> Path:
@@ -111,7 +112,7 @@ def _refresh_linux_desktop_database() -> None:
 
     if shutil.which("update-desktop-database"):
         try:
-            subprocess.run(["update-desktop-database", str(apps_dir)], capture_output=True, check=False)
+            subprocess.run(["update-desktop-database", str(apps_dir)], capture_output=True, check=False, timeout=3)
         except Exception:
             pass
 
@@ -119,7 +120,7 @@ def _refresh_linux_desktop_database() -> None:
     for kbuild in ("kbuildsycoca6", "kbuildsycoca5"):
         if shutil.which(kbuild):
             try:
-                subprocess.run([kbuild], capture_output=True, check=False)
+                subprocess.run([kbuild], capture_output=True, check=False, timeout=3)
                 break
             except Exception:
                 pass
@@ -430,6 +431,9 @@ def _uninstall_mac_app() -> bool:
 # --- PUBLIC API ---
 
 def is_desktop_installed() -> bool:
+    if profile():
+        return False
+
     """Checks if the application is registered in the OS application launcher."""
     if sys.platform.startswith("win"):
         programs = _get_windows_programs_dir()
@@ -450,6 +454,9 @@ def is_desktop_installed() -> bool:
         return False
 
 def is_autostart_enabled() -> bool:
+    if profile():
+        return False
+
     """Checks if Katip is configured to start on user login."""
     if sys.platform.startswith("win"):
         startup = _get_windows_startup_dir()
@@ -462,6 +469,9 @@ def is_autostart_enabled() -> bool:
         return _get_linux_autostart_path().exists()
 
 def install_desktop_entry() -> bool:
+    if profile():
+        return False
+
     """
     Registers Katip with the OS Application Menu / Search.
     Linux: ~/.local/share/applications/katip.desktop & icon themes.
@@ -526,6 +536,9 @@ def install_desktop_entry() -> bool:
         return False
 
 def uninstall_desktop_entry() -> bool:
+    if profile():
+        return False
+
     """Removes Katip from the OS Application Menu / Search."""
     try:
         if sys.platform.startswith("win"):
@@ -553,6 +566,9 @@ def uninstall_desktop_entry() -> bool:
         return False
 
 def set_autostart(enable: bool) -> bool:
+    if profile():
+        return False
+
     """Enables or disables autostart on system login."""
     try:
         if sys.platform.startswith("win"):
@@ -606,6 +622,8 @@ def set_autostart(enable: bool) -> bool:
         return False
 
 def ensure_desktop_installed() -> None:
+    if profile():
+        return
     """
     Checks if desktop entry is installed; if not, automatically registers it.
     This ensures that when a user runs the app, it immediately becomes discoverable
@@ -650,6 +668,19 @@ def purge_all(remove_config: bool = True) -> bool:
             from .config import get_config_dir
             cfg = get_config_dir()
             if cfg.exists():
+                import json
+                from .infrastructure.secrets import SecretStore
+                store = SecretStore(cfg / "config.json")
+                references = set()
+                for name in ("config.json", "config.previous.json"):
+                    file = cfg / name
+                    if file.exists():
+                        body = json.loads(file.read_text(encoding="utf-8"))
+                        references.update(body.get("secret_refs", {}).values())
+                        references.update(body.get("secret_history", []))
+                # Keep references if the credential store is locked; do not claim a full purge.
+                if not all(store.delete(reference) for reference in references):
+                    return False
                 shutil.rmtree(cfg)
         except Exception as e:
             print(f"[Desktop] Error removing config dir: {e}")

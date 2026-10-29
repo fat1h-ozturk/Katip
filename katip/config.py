@@ -4,31 +4,39 @@ import re
 import sys
 import tempfile
 import unicodedata
+from uuid import uuid4
 from copy import deepcopy
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict
+from .runtime import app_id, profile
 
 def get_config_dir() -> Path:
     """Returns standard config directory based on host OS."""
     if sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA")
         if appdata:
-            return Path(appdata) / "katip"
-        return Path.home() / "AppData" / "Roaming" / "katip"
+            return Path(appdata) / app_id()
+        return Path.home() / "AppData" / "Roaming" / app_id()
     elif sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "katip"
+        return Path.home() / "Library" / "Application Support" / app_id()
     else:
         xdg = os.environ.get("XDG_CONFIG_HOME")
         if xdg:
-            return Path(xdg) / "katip"
-        return Path.home() / ".config" / "katip"
+            return Path(xdg) / app_id()
+        return Path.home() / ".config" / app_id()
 
 CONFIG_DIR = get_config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
+SECRET_KEYS = ("gemini_api_key", "groq_api_key", "openai_api_key", "anthropic_api_key")
+
 DEFAULT_CONFIG: Dict[str, Any] = {
+    "schema_version": 1,
+    "secret_refs": {},
+    "secret_history": [],
+    "stt_provider": "auto",
     "provider": "gemini",  # "gemini", "groq", "openai", "claude"
     "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
     "gemini_model": DEFAULT_GEMINI_MODEL,
@@ -84,6 +92,7 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Ayarlar bir JSON nesnesi olmalıdır.")
     choices = {
         "provider": ("gemini", "groq", "openai", "claude", "codex", "agy"),
+        "stt_provider": ("auto", "groq", "openai"),
         "mode": ("dictation", "chat", "email", "prompt", "bullets"),
         "trigger_mode": ("toggle", "push_to_talk"),
         "language": ("auto", "tr", "en"),
@@ -97,6 +106,12 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError(f"Geçersiz ayar türü: {key}")
         if key in choices and value not in choices[key]:
             raise ValueError(f"Geçersiz ayar: {key}")
+        if key == "schema_version" and value != 1:
+            raise ValueError("Desteklenmeyen ayar şeması; dosya değiştirilmedi.")
+        if key == "secret_history" and (len(value) > 1000 or not all(isinstance(ref, str) and re.fullmatch(r"[a-f0-9]{32}", ref) for ref in value)):
+            raise ValueError("Geçersiz anahtar geçmişi.")
+        if key == "secret_refs" and (not all(k in SECRET_KEYS and isinstance(v, str) and re.fullmatch(r"[a-f0-9]{32}", v) for k, v in value.items())):
+            raise ValueError("Geçersiz anahtar referansı.")
         if key == "vad_mode" and not 0 <= value <= 3:
             raise ValueError("VAD seviyesi 0–3 arasında olmalıdır.")
         if key == "input_device_index" and value < -1:
@@ -115,8 +130,12 @@ def validate_config(values: Dict[str, Any]) -> Dict[str, Any]:
 class ConfigManager:
     """Manages loading, saving, and accessing application configuration."""
 
-    def __init__(self, config_file: Path = None):
+    def __init__(self, config_file: Path = None, secret_store=None):
         self.config_file = config_file if config_file is not None else CONFIG_FILE
+        self.secret_store = secret_store
+        self.secret_error = ""
+        self._read_only = False
+        self._extra = {}
         self.data = deepcopy(DEFAULT_CONFIG)
         self.load()
 
@@ -126,7 +145,7 @@ class ConfigManager:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Migrate from legacy talk-to-write config if present
-        if not self.config_file.exists():
+        if not self.config_file.exists() and not profile():
             legacy_config = self.config_file.parent.parent / "talk-to-write" / "config.json"
             if legacy_config.exists():
                 try:
@@ -142,6 +161,10 @@ class ConfigManager:
                     saved = json.load(f)
                     if not isinstance(saved, dict):
                         raise ValueError("Ayar dosyası bir nesne olmalıdır.")
+                    if saved.get("schema_version", 1) != 1:
+                        self._read_only = True
+                        self.secret_error = "Bu ayar dosyası daha yeni bir sürüme ait; dosya değiştirilmedi."
+                    self._extra = {k: v for k, v in saved.items() if k not in DEFAULT_CONFIG}
                     for key, value in saved.items():
                         try:
                             self.data.update(validate_config({key: value}))
@@ -149,6 +172,16 @@ class ConfigManager:
                             print(f"[Config] Invalid setting ignored: {key}")
             except Exception as e:
                 print(f"[Config] Error loading config: {e}. Using defaults.")
+
+        if self.secret_store:
+            for key, reference in self.data["secret_refs"].items():
+                try:
+                    value = self.secret_store.get(reference)
+                    if value is None:
+                        raise RuntimeError("Anahtar kasasındaki kayıt bulunamadı.")
+                    self.data[key] = value
+                except RuntimeError as error:
+                    self.secret_error = str(error)
 
         # Check environment fallback for API keys if empty
         if not self.data.get("gemini_api_key") and os.environ.get("GEMINI_API_KEY"):
@@ -163,16 +196,56 @@ class ConfigManager:
     def save(self) -> None:
         """Atomically replace the file; never truncate the last valid settings."""
         temporary_path = None
+        created_refs = []
+        if self._read_only:
+            raise RuntimeError("Daha yeni ayar şeması üzerine yazılamaz; önceki dosya korundu.")
+        persisted = {**self._extra, **validate_config(self.data)}
+        refs = dict(persisted["secret_refs"])
         try:
+            if self.secret_store:
+                for key in SECRET_KEYS:
+                    value = self.data[key]
+                    reference = refs.get(key)
+                    if not value and reference:
+                        # A locked/unavailable vault must not erase an existing reference.
+                        if self.secret_error:
+                            raise RuntimeError(self.secret_error)
+                        refs.pop(key, None)
+                    elif value:
+                        if not reference or self.secret_store.get(reference) != value:
+                            reference = uuid4().hex
+                            created_refs.append(reference)
+                            self.secret_store.put(reference, value)
+                            refs[key] = reference
+                    persisted[key] = ""
+                persisted["secret_refs"] = refs
+                history = set(self.data["secret_history"]) | set(self.data["secret_refs"].values()) | set(refs.values())
+                if len(history) > 1000:
+                    raise RuntimeError("Anahtar geçmişi sınırı aşıldı; önceki kayıtlar korundu.")
+                persisted["secret_history"] = sorted(history)
+            if self.config_file.exists() and not (self.config_file.parent / "config.previous.json").exists():
+                # Preserve one rollback copy with user-only permissions.
+                backup = self.config_file.parent / "config.previous.json"
+                fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(self.config_file.read_bytes())
+                    handle.flush()
+                    os.fsync(handle.fileno())
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.config_file.parent,
                                              prefix=".config-", suffix=".tmp", delete=False) as f:
                 temporary_path = Path(f.name)
-                json.dump(validate_config(self.data), f, indent=2, ensure_ascii=False)
+                json.dump(persisted, f, indent=2, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temporary_path, self.config_file)
+            self.data["secret_refs"] = refs
+            self.data["secret_history"] = persisted["secret_history"]
         except Exception as e:
+            if self.secret_store:
+                for reference in created_refs:
+                    with suppress(Exception):
+                        self.secret_store.delete(reference)
             raise RuntimeError("Ayarlar kaydedilemedi; önceki ayar dosyası korundu.") from e
         finally:
             if temporary_path is not None:
@@ -206,4 +279,6 @@ class ConfigManager:
             return self.get("openai_api_key", "").strip()
         elif provider == "claude":
             return self.get("anthropic_api_key", "").strip()
+        if provider in ("codex", "agy"):
+            return (self.get("groq_api_key", "") or self.get("openai_api_key", "")).strip()
         return ""

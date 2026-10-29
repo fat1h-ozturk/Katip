@@ -1,302 +1,264 @@
-"""Coordinator regressions with no GUI, clipboard, microphone or API side effects."""
+"""Session/coordinator regressions. Device, HTTP and desktop boundaries are fakes."""
+from collections import deque
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from katip.app import KatipApp
+from katip.application.session import SessionController, State, JobEvent
 from katip.config import ConfigManager
+from katip.diagnostics import Diagnostics
 from katip.services.groq import GroqResult
+from katip.platform.target import Target
 
 
 def make_app(tmp_path):
     app = object.__new__(KatipApp)
-    app.config = ConfigManager(tmp_path / "config.json")
-    app.recorder = Mock(is_recording=False, has_pending_audio=False, last_error="")
-    app.pending_audio = b"original-audio"
-    app.last_text = ""
+    app.config = ConfigManager(tmp_path / 'config.json')
+    app.session = SessionController()
+    app.session.begin(app.config.data)
+    app.session.state = State.TRANSCRIBING
+    app.diagnostics = Diagnostics()
+    app._capture_job_id = app.session.job.id
+    app._target = Target('fake', 'editor')
+    app.session.job.target = app._target
+    app.recorder = Mock(is_recording=False, is_capturing=False, has_pending_audio=False, last_error='', device_index=-1, vad_mode=2)
+    app.recorder.raw_wav.return_value = b'original-raw-wav'
+    app.recorder.retry_audio.return_value = b'retained-frames'
+    app.pending_audio = b'original-audio'
+    app.last_text = ''
     app.last_groq_result = None
-    app.last_error = ""
-    app.is_busy_processing = True
+    app.last_error = ''
     app.settings_dialog = None
     app.q_app = Mock()
     app.q_app.activeModalWidget.return_value = None
-    app.signals = SimpleNamespace(processing_done=Mock(), processing_error=Mock(), processing_ready=Mock(), reformat_done=Mock())
-    app.sound = Mock()
-    app.pill = Mock()
-    app.tray = Mock()
-    app.injector = Mock(last_error="Paste failed")
+    app.events = deque()
+    app.signals = SimpleNamespace(work_event=SimpleNamespace(emit=app.events.append))
+    app.sound, app.pill, app.tray = Mock(), Mock(), Mock()
+    app.injector = Mock(last_error='Paste failed')
     app.injector.inject_text.return_value = True
-    service = Mock(last_warning="")
-    service.transcribe_and_format.return_value = ("Complete text", 0.2)
+    service = Mock(last_warning='')
+    service.transcribe_and_format.return_value = GroqResult(None, 'Complete text', .2, provider='gemini')
     app._get_gemini_service = lambda: service
+    # Execute worker jobs synchronously, but keep GUI commits explicitly queued.
+    app._spawn = lambda target, *args: target(*args)
     return app, service
+
+
+def drain(app):
+    while app.events:
+        app._on_work_event(app.events.popleft())
+
+
+@pytest.fixture(autouse=True)
+def unchanged_target(monkeypatch):
+    monkeypatch.setattr('katip.platform.target.target_unchanged', lambda _: True)
+    monkeypatch.setattr('katip.platform.target.capture_target', lambda: Target('fake', 'editor'))
+
+
+def test_worker_does_not_write_ui_state_and_commit_releases_audio(tmp_path):
+    app, _ = make_app(tmp_path)
+    app._process_audio_worker(app.pending_audio)
+    assert app.last_text == '' and app.pending_audio
+    assert app.is_busy_processing
+    drain(app)
+    assert app.last_text == 'Complete text'
+    assert not app.pending_audio and not app.is_busy_processing
+    app.recorder.discard_audio.assert_called_once()
 
 
 def test_failed_injection_never_reports_success_and_keeps_result(tmp_path):
     app, _ = make_app(tmp_path)
     app.injector.inject_text.return_value = False
     app._process_audio_worker(app.pending_audio)
-    app.signals.processing_done.emit.assert_not_called()
-    app.signals.processing_error.emit.assert_called_once_with("Paste failed")
-    assert app.last_text == "Complete text"
-    assert app.pending_audio == b"original-audio"
-    assert app.is_busy_processing  # GUI callback owns the state transition.
+    drain(app)
+    assert app.last_text == 'Complete text' and app.pending_audio
+    assert app.last_error == 'Paste failed'
+    app.pill.show_success.assert_not_called()
+
+
+def test_unverifiable_target_leaves_text_ready_without_pasting(tmp_path):
+    app, _ = make_app(tmp_path)
+    app._target = None
+    app.session.job.target = None
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.session.state == State.READY
+    assert app.last_text == 'Complete text' and app.pending_audio
+    app.injector.inject_text.assert_not_called()
+    app.pill.show_success.assert_not_called()
+
+
+def test_empty_output_is_actionable_and_preserves_audio(tmp_path):
+    app, service = make_app(tmp_path)
+    service.transcribe_and_format.return_value = GroqResult('', None, .1)
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.session.state == State.ERROR and 'EMPTY_OUTPUT' in app.last_error
+    assert app.pending_audio
 
 
 def test_formatter_fallback_requires_review_before_injection(tmp_path):
     app, service = make_app(tmp_path)
-    service.last_warning = "Raw transcript preserved"
+    from dataclasses import replace
+    service.transcribe_and_format.return_value = replace(service.transcribe_and_format.return_value, warning='Raw transcript preserved')
     app._process_audio_worker(app.pending_audio)
+    drain(app)
     app.injector.inject_text.assert_not_called()
-    app.signals.processing_error.emit.assert_called_once()
-    assert app.last_text == "Complete text"
-    assert app.pending_audio
+    assert app.last_text == 'Complete text' and app.pending_audio
 
 
-def test_service_failure_keeps_audio_and_emits_error(tmp_path):
+def test_unexpected_service_error_does_not_expose_private_message(tmp_path):
     app, service = make_app(tmp_path)
-    service.transcribe_and_format.side_effect = RuntimeError("Incomplete response")
+    service.transcribe_and_format.side_effect = RuntimeError('SECRET TRANSCRIPT')
     app._process_audio_worker(app.pending_audio)
-    app.signals.processing_error.emit.assert_called_once_with("Incomplete response")
-    app.injector.inject_text.assert_not_called()
-    assert app.pending_audio == b"original-audio"
-
-
-def test_success_clears_audio_only_after_gui_completion(tmp_path):
-    app, _ = make_app(tmp_path)
-    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert 'SECRET' not in app.last_error and 'UNEXPECTED_ERROR' in app.last_error
     assert app.pending_audio
-    app.signals.processing_done.emit.assert_called_once_with("Complete text", 0.2)
-    app._on_processing_success("Complete text", 0.2)
-    assert not app.pending_audio
-    assert not app.is_busy_processing
 
 
-@pytest.mark.parametrize("state", ["is_recording", "has_pending_audio"])
+@pytest.mark.parametrize('state', ['is_recording', 'is_capturing'])
 def test_recording_settings_cannot_replace_recorder(tmp_path, state):
     app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
+    app.session.state = State.READY
     setattr(app.recorder, state, True)
     original = app.recorder
-    assert not app._can_edit_settings()
     app._on_config_updated()
     assert app.recorder is original
     original.terminate.assert_not_called()
 
 
-def test_capture_error_preserves_frames_for_retry(tmp_path):
+def test_capture_error_is_drained_off_gui_and_retained(tmp_path):
     app, _ = make_app(tmp_path)
-    app.pending_audio = b""
-    app.is_busy_processing = False
-    app.recorder.stop_recording.return_value = b"captured-before-disconnect"
-    app._on_capture_error("Microphone disconnected")
-    assert app.pending_audio == b"captured-before-disconnect"
-    assert app.last_error == "Microphone disconnected"
-    assert not app.is_busy_processing
-    app.tray.set_recording.assert_called_with(False)
+    app.pending_audio = b''
+    app.session.state = State.RECORDING
+    app.recorder.last_error = '[CAPTURE_READ_ERROR] Kayıt kesildi.'
+    app.recorder.stop_recording.return_value = b'partial-recording'
+    app._on_capture_error(app.session.job.id, app.recorder.last_error)
+    assert app.pending_audio == b''  # GUI has not applied the queued result.
+    drain(app)
+    assert app.pending_audio == b'partial-recording'
+    assert app.session.state == State.ERROR
 
 
-def test_pending_capture_can_be_drained_on_explicit_retry(tmp_path):
+def test_retry_is_review_only_and_uses_retained_audio(tmp_path):
     app, _ = make_app(tmp_path)
-    app.pending_audio = b""
-    app.is_busy_processing = False
-    app.recorder.stop_recording.return_value = b"retained-frames"
-    app._start_processing = Mock()
+    app.session.state = State.ERROR
+    app.pending_audio = b''
     app.retry_last_audio()
-    app._start_processing.assert_called_once_with(b"retained-frames", auto_paste=False)
+    drain(app)
+    assert app.last_text == 'Complete text'
+    assert app.pending_audio == b'retained-frames'
+    app.injector.inject_text.assert_not_called()
 
 
-def test_new_recording_does_not_overwrite_unprocessed_audio(tmp_path):
+def test_new_recording_cannot_overwrite_unprocessed_audio(tmp_path):
     app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
+    app.session.state = State.ERROR
     app.show_last_result = Mock()
     app.start_recording()
     app.show_last_result.assert_called_once()
     app.recorder.start_recording.assert_not_called()
-    assert app.pending_audio == b"original-audio"
 
 
-def test_formatter_error_followed_by_hotkey_opens_recovery(tmp_path):
+def test_stale_provider_event_cannot_overwrite_new_session(tmp_path):
     app, _ = make_app(tmp_path)
-    app.config.set("provider", "groq")
-    result = groq_result(None, "Seçili metin modeli bulunamadı (HTTP 404).")
-    service = Mock()
-    service.transcribe_and_format.return_value = result
-    app._get_groq_service = Mock(return_value=service)
+    old = JobEvent(app.session.job.id, app.session.job.attempt, 'error', 'old error')
+    app.session.cancel()
+    app.session.begin(app.config.data)
+    app._on_work_event(old)
+    assert app.last_error == '' and app.session.state == State.RECORDING
+
+
+def test_cancel_then_late_result_cannot_paste(tmp_path):
+    app, _ = make_app(tmp_path)
     app._process_audio_worker(app.pending_audio)
-    app._on_processing_error(app.signals.processing_error.emit.call_args.args[0])
-    app.show_last_result = Mock()
-    app.toggle_recording()
-    app.show_last_result.assert_called_once()
-    assert not app.is_busy_processing
-    assert app.last_groq_result is result
-    assert app.pending_audio == b"original-audio"
+    app.cancel_processing()
+    drain(app)
     app.injector.inject_text.assert_not_called()
-    app._discard_last_audio()
-    app.toggle_recording()
-    app.recorder.start_recording.assert_called_once()
+    assert app.pending_audio and 'CANCELLED' in app.last_error
 
 
-def test_stale_capture_error_cannot_clear_active_processing(tmp_path):
-    app, _ = make_app(tmp_path)
-    app._on_capture_error("late device notification")
-    app.recorder.stop_recording.assert_not_called()
-    assert app.pending_audio == b"original-audio"
-    assert app.is_busy_processing
-
-
-def test_retried_result_is_reviewed_without_pasting_into_recovery_window(tmp_path):
-    app, _ = make_app(tmp_path)
-    app._process_audio_worker(app.pending_audio, auto_paste=False)
-    app.injector.inject_text.assert_not_called()
-    app.signals.processing_ready.emit.assert_called_once_with("Complete text")
-    app._on_processing_ready("Complete text")
-    assert not app.is_busy_processing
-    assert app.pending_audio == b"original-audio"
-
-
-def test_interrupted_capture_is_preserved_without_automatic_api_call(tmp_path):
+def test_interrupted_capture_does_not_call_api(tmp_path):
     app, service = make_app(tmp_path)
     app.recorder.is_recording = True
-    app.recorder.last_error = "Microphone disconnected"
-    app.recorder.stop_recording.return_value = b"partial-recording"
-    app._start_processing = Mock()
+    app.session.state = State.RECORDING
+    app.recorder.last_error = '[CAPTURE_READ_ERROR] Interrupted'
+    app.recorder.stop_recording.return_value = b'partial'
     app.stop_recording_and_process()
-    app._start_processing.assert_not_called()
+    drain(app)
     service.transcribe_and_format.assert_not_called()
-    assert app.pending_audio == b"partial-recording"
-    assert not app.is_busy_processing
+    assert app.pending_audio == b'partial'
 
 
-def test_hotkey_cannot_start_recording_in_modal_result_window(tmp_path):
+def test_modal_window_blocks_new_capture(tmp_path):
     app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
-    app.pending_audio = b""
+    app.session.state = State.READY
+    app.pending_audio = b''
     app.q_app.activeModalWidget.return_value = object()
     app.start_recording()
     app.recorder.start_recording.assert_not_called()
 
 
-def test_retry_failure_preserves_previous_recovered_transcript(tmp_path, monkeypatch):
-    import katip.app as app_module
-    app, service = make_app(tmp_path)
-    app.last_text = "Recovered complete transcript"
-    service.transcribe_and_format.side_effect = RuntimeError("retry failed")
-    monkeypatch.setattr(app_module.threading, "Thread", Mock())
-    app._start_processing(app.pending_audio, auto_paste=False)
-    app._process_audio_worker(app.pending_audio, auto_paste=False)
-    assert app.last_text == "Recovered complete transcript"
-
-
-@pytest.mark.parametrize("commit_success", [False, True])
-def test_audio_save_releases_pending_only_after_success(tmp_path, monkeypatch, commit_success):
-    import katip.app as app_module
+@pytest.mark.parametrize('commit_success', [False, True])
+def test_audio_save_releases_raw_only_after_success(tmp_path, monkeypatch, commit_success):
     app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
-    monkeypatch.setattr(app_module.QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "audio.wav"), ""))
+    app.session.state = State.ERROR
+    monkeypatch.setattr('katip.app.QFileDialog.getSaveFileName', lambda *a: (str(tmp_path / 'audio.wav'), ''))
     file = Mock()
     file.open.return_value = True
-    file.write.return_value = len(app.pending_audio)
+    file.write.return_value = len(b'original-raw-wav')
     file.commit.return_value = commit_success
-    monkeypatch.setattr(app_module, "QSaveFile", lambda path: file)
+    monkeypatch.setattr('katip.app.QSaveFile', lambda _: file)
     app._save_last_audio()
+    file.write.assert_called_once_with(b'original-raw-wav')
     assert bool(app.pending_audio) is not commit_success
+    assert app.recorder.discard_audio.called is commit_success
 
 
-@pytest.mark.parametrize("recording", [False, True])
-def test_recovery_actions_cannot_clear_an_active_job(tmp_path, recording):
+def groq_result(formatted='Düzenlenmiş.', warning=''):
+    return GroqResult('özgün ham metin', formatted, .2, warning=warning, mode='email', language='tr',
+        custom_vocabulary=('Katip',), vocabulary_aliases=(('paysayd', 'PySide6'),),
+        llm_model='qwen/qwen3.8-27b', stt_model='whisper-large-v3-turbo')
+
+
+@pytest.mark.parametrize('current', [False, True])
+def test_reformat_uses_original_context_without_stt_or_paste(tmp_path, current):
     app, _ = make_app(tmp_path)
-    app.is_busy_processing = not recording
-    app.recorder.is_recording = recording
     original = groq_result()
+    app.session.state = State.READY
     app.last_groq_result = original
     app.last_text = original.text
-    app._discard_last_audio()
-    app._save_last_audio()
+    app.config.update({'mode': 'chat', 'custom_vocabulary': ['Yeni']})
+    service = Mock()
+    service.format_transcript.return_value = groq_result('Yeni metin')
+    app._get_groq_service = Mock(return_value=service)
+    app.reformat_last_text(current)
     assert app.last_groq_result is original
-    assert app.last_text == original.text
-    assert app.pending_audio == b"original-audio"
-    app.recorder.stop_recording.assert_not_called()
-
-
-def test_modal_result_or_save_window_blocks_reentrant_actions(tmp_path):
-    app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
-    app.q_app.activeModalWidget.return_value = object()
-    app.last_groq_result = groq_result()
-    app._build_result_dialog = Mock()
-    app._start_processing = Mock()
-    app._get_groq_service = Mock()
-    app.show_last_result()
-    app.retry_last_audio()
-    app.reformat_last_text()
-    app._build_result_dialog.assert_not_called()
-    app._start_processing.assert_not_called()
-    app._get_groq_service.assert_not_called()
-
-
-def groq_result(formatted="Düzenlenmiş.", warning=""):
-    return GroqResult("özgün ham metin", formatted, 0.2, warning=warning,
-                      mode="email", language="tr", custom_vocabulary=("Katip",),
-                      vocabulary_aliases=(("paysayd", "PySide6"),),
-                      llm_model="qwen/qwen3.8-27b", stt_model="whisper-large-v3-turbo")
-
-
-@pytest.mark.parametrize("warning", ["", "Ham metin korundu"])
-def test_groq_snapshot_survives_formatter_or_paste_failure(tmp_path, warning):
-    app, _ = make_app(tmp_path)
-    app.config.set("provider", "groq")
-    result = groq_result(None if warning else "Düzenlenmiş.", warning)
-    service = Mock()
-    service.transcribe_and_format.return_value = result
-    app._get_groq_service = Mock(return_value=service)
-    app.injector.inject_text.return_value = False
-    app._process_audio_worker(app.pending_audio)
-    assert app.last_groq_result is result
-    assert app.last_text == result.text
-    assert app.pending_audio == b"original-audio"
-    if warning:
-        app.injector.inject_text.assert_not_called()
-    else:
-        app.injector.inject_text.assert_called_once_with(result.text)
-
-
-@pytest.mark.parametrize("use_current", [False, True])
-def test_reformat_uses_original_raw_text_without_stt_or_paste(tmp_path, monkeypatch, use_current):
-    import katip.app as app_module
-    app, _ = make_app(tmp_path)
-    original = groq_result()
-    app.last_groq_result = original
-    app.last_text = original.text
-    app.pending_audio = b""
-    app.is_busy_processing = False
-    app.config.update({"mode": "chat", "custom_vocabulary": ["Yeni"],
-                       "vocabulary_aliases": {"yeni": "Yeni"}, "groq_llm_model": "llama-3.3-70b-versatile"})
-    candidate = groq_result("Yeni düzenleme.")
-    service = Mock()
-    service.format_transcript.return_value = candidate
-    app._get_groq_service = Mock(return_value=service)
-
-    def immediate_thread(*, target, args, daemon):
-        return SimpleNamespace(start=lambda: target(*args))
-
-    monkeypatch.setattr(app_module.threading, "Thread", immediate_thread)
-    app.reformat_last_text(use_current)
-    app._get_groq_service.assert_called_once_with(stt_model=original.stt_model, llm_model=original.llm_model)
-    service.transcribe_and_format.assert_not_called()
+    drain(app)
+    assert app.last_text == 'Yeni metin'
     call = service.format_transcript.call_args
     assert call.args == (original.raw_transcript,)
-    assert call.kwargs["mode"] == ("chat" if use_current else "email")
-    assert call.kwargs["custom_vocabulary"] == (["Yeni"] if use_current else ["Katip"])
-    assert call.kwargs["vocabulary_aliases"] == ({"yeni": "Yeni"} if use_current else {"paysayd": "PySide6"})
-    assert app.last_groq_result is original  # Commit waits for GUI signal delivery.
-    app.signals.reformat_done.emit.assert_called_once_with(original, candidate)
-    app._on_reformat_done(original, candidate)
-    assert app.last_groq_result is candidate
-    assert app.last_text == "Yeni düzenleme."
-    assert not app.is_busy_processing
-    assert not app.pending_audio
+    assert call.kwargs['mode'] == ('chat' if current else 'email')
+    assert call.kwargs['custom_vocabulary'] == (['Yeni'] if current else ['Katip'])
     app.injector.inject_text.assert_not_called()
+    service.transcribe_and_format.assert_not_called()
+
+
+@pytest.mark.parametrize('provider', ['openai', 'claude', 'codex', 'agy'])
+def test_reformat_keeps_originating_provider(tmp_path, provider):
+    from dataclasses import replace
+    app, _ = make_app(tmp_path)
+    app.last_groq_result = replace(groq_result(), provider=provider)
+    app.session.state = State.READY
+    service = Mock()
+    service.format_transcript.return_value = replace(groq_result('Yeni'), provider=provider)
+    app._service = Mock(return_value=service)
+    app.reformat_last_text()
+    drain(app)
+    app._service.assert_called_once_with(provider)
+    assert app.last_groq_result.provider == provider
+    assert app.last_text == 'Yeni'
 
 
 def test_reformat_failure_preserves_previous_pair(tmp_path):
@@ -304,77 +266,47 @@ def test_reformat_failure_preserves_previous_pair(tmp_path):
     original = groq_result()
     app.last_groq_result = original
     app.last_text = original.text
-    app._on_reformat_done(original, groq_result(None, "Düzenleme başarısız"))
-    assert app.last_groq_result is original
-    assert app.last_text == original.text
-    assert not app.is_busy_processing
+    app._on_reformat_done(original, groq_result(None, 'Failed'))
+    assert app.last_groq_result is original and app.last_text == original.text
+
+
+def test_target_change_prevents_delivery(tmp_path, monkeypatch):
+    app, _ = make_app(tmp_path)
+    monkeypatch.setattr('katip.platform.target.target_unchanged', lambda _: False)
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
     app.injector.inject_text.assert_not_called()
+    assert app.last_text and app.pending_audio and 'TARGET_CHANGED' in app.last_error
 
 
-def test_stale_reformat_cannot_overwrite_another_record(tmp_path):
-    app, _ = make_app(tmp_path)
-    old, current = groq_result(), groq_result("Son kayıt")
-    app.last_groq_result = current
-    app.last_text = current.text
-    app._on_reformat_done(old, groq_result("Eski yanıt"))
-    assert app.last_groq_result is current
-    assert app.last_text == current.text
-    assert app.is_busy_processing
-
-
-def test_reformat_busy_guard_and_clear_lifecycle(tmp_path):
-    app, _ = make_app(tmp_path)
-    app.last_groq_result = groq_result()
-    app.last_text = app.last_groq_result.text
-    app._get_groq_service = Mock()
-    app.reformat_last_text()
-    app._get_groq_service.assert_not_called()
-    app.is_busy_processing = False
-    app._discard_last_audio()
-    assert not app.pending_audio
-    assert not app.last_text
-    assert app.last_groq_result is None
-
-
-def test_new_recording_does_not_show_previous_transcript(tmp_path):
-    app, _ = make_app(tmp_path)
-    app.is_busy_processing = False
-    app.pending_audio = b""
-    app.last_groq_result = groq_result()
-    app.last_text = app.last_groq_result.text
-    app.start_recording()
-    assert app.last_groq_result is None
-    assert app.last_text == ""
-
-
-def test_result_dialog_exposes_both_texts_and_optional_details(tmp_path, monkeypatch):
-    import katip.app as app_module
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton, QTabWidget, QTextEdit
+def test_result_dialog_exposes_text_and_diagnostics(tmp_path):
+    from PySide6.QtWidgets import QApplication, QTextEdit, QPushButton
     qapp = QApplication.instance() or QApplication([])
     app, _ = make_app(tmp_path)
-    app.last_groq_result = groq_result('"İşte: <think>alıntı</think>"')
+    app.last_groq_result = groq_result()
     app.last_text = app.last_groq_result.text
-    app.pending_audio = b""
     dialog = app._build_result_dialog()
-    assert dialog.findChild(QTextEdit, "rawTranscript").toPlainText() == "özgün ham metin"
-    assert dialog.findChild(QTextEdit, "formattedTranscript").toPlainText() == app.last_text
-    assert not dialog.findChild(QCheckBox, "useCurrentFormattingSettings").isChecked()
-    tabs = dialog.findChild(QTabWidget, "resultTabs")
-    assert tabs.count() == 3
-    tabs.setCurrentIndex(0)
-    buttons = {button.text(): button for button in dialog.findChildren(QPushButton)}
-    buttons["Gösterilen Metni Kopyala"].click()
-    app.injector.set_clipboard.assert_called_once_with("özgün ham metin")
-    assert buttons["Metni Yeniden Düzenle"].isEnabled()
-    assert not buttons["Sesi Yeniden İşle"].isEnabled()
-    app.q_app = qapp
-    app.is_busy_processing = False
-    app._get_groq_service = Mock()
-    worker = Mock()
-    monkeypatch.setattr(app_module.threading, "Thread", worker)
-    QTimer.singleShot(0, buttons["Metni Yeniden Düzenle"].click)
-    dialog.exec()
-    worker.return_value.start.assert_called_once()  # accept() releases the modal guard first.
+    assert dialog.findChild(QTextEdit, 'rawTranscript').toPlainText() == 'özgün ham metin'
+    buttons = {b.text(): b for b in dialog.findChildren(QPushButton)}
+    assert buttons['Metni Yeniden Düzenle'].isEnabled()
+    buttons['Gösterilen Metni Kopyala'].click()
+    app.injector.set_clipboard.assert_called_once_with('Düzenlenmiş.')
+    dialog.close()
     dialog.deleteLater()
     qapp.processEvents()
+
+
+def test_target_change_during_clipboard_sync_prevents_paste(tmp_path, monkeypatch):
+    from katip.injector import BaseInjector
+    class Clipboard(BaseInjector):
+        last_error = ''
+        def get_current_clipboard(self): return None
+        def set_clipboard(self, value): return True
+        def simulate_paste(self): raise AssertionError('Changed target must not receive input')
+    app, _ = make_app(tmp_path)
+    app.injector = Clipboard()
+    monkeypatch.setattr('katip.injector.time.sleep', lambda _: None)
+    monkeypatch.setattr('katip.platform.target.target_unchanged', Mock(side_effect=[True, True, False]))
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.pending_audio and 'TARGET_CHANGED' in app.last_error

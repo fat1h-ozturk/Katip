@@ -33,8 +33,8 @@ def test_codex_jsonl_response_and_safe_command(failure, platform, monkeypatch):
     elif failure == "failed":
         events[-1] = {"type": "turn.failed", "error": {"message": "private"}}
     output = "\n".join(json.dumps(event, ensure_ascii=False) for event in events)
-    with patch("katip.services.codex.requests.post", return_value=MagicMock(status_code=200, text="Original transcript.")), \
-         patch("katip.services.codex.subprocess.run", return_value=MagicMock(returncode=0, stdout=output)) as run:
+    with patch("katip.services.codex.http_post", return_value=MagicMock(status_code=200, text="Original transcript.")), \
+         patch("katip.services.codex.run_process", return_value=MagicMock(returncode=0, stdout=output)) as run:
         result = CodexService("groq", "secret", "whisper", "selected-model").transcribe_and_format(b"fake")
     cmd = run.call_args.args[0]
     assert 'sandbox_mode="read-only"' in cmd
