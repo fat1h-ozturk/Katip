@@ -2,9 +2,9 @@
 
 **Kâtip**, **Linux**, **Windows** ve **macOS** için geliştirilmiş, **Wispr Flow** ve **SuperWhisper** alternatifi, ultra hızlı ve akıllı bir sesli dikte masaüstü asistanıdır.
 
-Mikrofonunuzdan konuşmanızı dinler; seçtiğiniz moda göre yazım ve biçimi düzenler. Doğrulanabilen hedef pencereye yapıştırma girdisi gönderir; hedef değişmişse veya doğrulanamıyorsa metni Son Sonuç menüsünde hazır tutar.
+Mikrofonunuzdan konuşmanızı dinler; seçtiğiniz moda göre yazım ve biçimi düzenler ve metni çalıştığınız pencereye yapıştırır. Hedef pencere değiştiyse veya yapıştırma yapılamıyorsa metni panoya alır ve bildirir; metin ve ses kaybolmaz.
 
-Bu geliştirme dalındaki güvenilirlik değişiklikleri ve henüz doğrulanmamış kabul adımları [uygulama durumunda](docs/reliability.md) açıklanmıştır. İndirilebilir yayımlanmış paketler bu dalın değişikliklerini otomatik içermez.
+Güvenilirlik değişiklikleri, otomatik olarak doğrulananlar ve gerçek masaüstünde henüz yapılmamış kabul adımları [güvenilirlik durumunda](docs/reliability.md) açıklanmıştır. v0.4.6 ve öncesi yayımlanmış paketler bu değişiklikleri içermez.
 
 ---
 
@@ -64,7 +64,7 @@ Kâtip tamamen bağımsız (**standalone**) paketler olarak yayınlanmaktadır; 
    - Ekranın üstünde şık bir kapsül belirecek ve siz konuştukça dinleyecektir (yazı imleciniz kaybolmaz).
 4. **Dikteyi Bitirin:**
    - Konuşmanız bittiğinde tekrar **`Ctrl + Alt + Space`** tuşlarına basın.
-   - Hedef doğrulanabiliyorsa yapıştırma girdisi gönderilir. Hedef değişmişse veya Wayland gibi ortamlarda kimliği doğrulanamıyorsa metni **Son Sonuç** menüsünden kopyalayın.
+   - Metin çalıştığınız pencereye yapıştırılır. Hedef pencere değiştiyse veya yapıştırma yolu yoksa metin panoya alınır ve **Ctrl+V** ile yapıştırmanız bildirilir; metin **Son Sonuç** menüsünde de durur.
 5. **Hata veya İptal Sonrasında:**
    - Son Sonuç menüsünden ham metni alın, yalnız metni yeniden düzenleyin, sesi filtreli/filtresiz yeniden işleyin veya ham WAV dosyasını kaydedin.
    - Tek kayıt sınırı **10 dakika veya 64 MiB ham PCM**; sınıra ulaşınca alınan ses korunur. Önceki sesi kopyalayarak, kaydederek veya açıkça temizleyerek yeni kayda geçebilirsiniz.
@@ -90,11 +90,12 @@ Kaynak kurulumunda Python 3.10+ ve PortAudio gerekir. Linux'ta `portaudio19-dev`
 
 ```bash
 uv sync --locked --group dev
-# Linux / macOS: üretim ayarları ve IPC'den ayrı aday profil
-KATIP_PROFILE=reliability uv run --no-sync python -m katip
+uv run --no-sync python -m katip
+# İsteğe bağlı: üretim ayarlarından ve IPC'den ayrı bir profil (Linux / macOS)
+KATIP_PROFILE=deneme uv run --no-sync python -m katip
 ```
 
-Windows PowerShell'de önce `$env:KATIP_PROFILE = "reliability"`, sonra `uv run --no-sync python -m katip` çalıştırın. Profil ilk açılışta kendi ayarlarını ister; üretim anahtarlarını otomatik kopyalamaz. Aday profilde menüye kurulum ve autostart değişikliği kapalıdır. Profil adı küçük harf, rakam ve tire içerebilir; en fazla 32 karakterdir.
+Windows PowerShell'de önce `$env:KATIP_PROFILE = "deneme"`, sonra `uv run --no-sync python -m katip` çalıştırın. Profil ilk açılışta kendi ayarlarını ister; üretim anahtarlarını otomatik kopyalamaz. Profilli çalışmada menüye kurulum ve autostart değişikliği kapalıdır. Profil adı küçük harf, rakam ve tire içerebilir; en fazla 32 karakterdir.
 
 `uv` kullanmadan: sanal ortamda `python -m pip install -r requirements-dev.lock`, ardından `python -m pip install --no-deps -e .` çalıştırın. `requirements-dev.lock`, `uv.lock` üzerinden dışa aktarılmış platform işaretli bağımlılıkları içerir.
 
@@ -111,9 +112,9 @@ Testler gerçek API, mikrofon ve panoyu varsayılan olarak engeller. Uzun DSP ö
 
 ### Anahtarlar ve Teşhis
 
-Masaüstü uygulaması API anahtarlarını işletim sistemi kasasına yazar (Linux Secret Service, Windows Credential Manager, macOS Keychain). Mevcut JSON anahtarları, başarılı kasa yazma/geri okuma sonrasında yapılan ayar kaydında referanslara dönüşür. Kasa kullanılamazsa kayıt başarısız olur ve eski ayarlar korunur; yeni anahtarı düz metne dönüştüren gizli geri dönüş yoktur. İlk göçün `config.previous.json` yedeği eski düz metin anahtarları içerebilir; bunu hassas bir geri dönüş yedeği olarak tutun. Eski sürüme dönmek için uygulamalar kapalıyken bu yedeği kullanın.
+Masaüstü uygulaması API anahtarlarını işletim sistemi kasasına yazar (Linux Secret Service, Windows Credential Manager, macOS Keychain). Mevcut JSON anahtarları, kasa kullanılabildiğinde bir sonraki ayar kaydında referanslara dönüşür. Kasa kilitli veya yoksa diğer ayarlar yine kaydedilir ve mevcut anahtarlar olduğu gibi kalır; yalnız yeni veya değişen anahtar reddedilir. Yeni anahtarı düz metne yazan gizli bir geri dönüş yoktur. İlk göçün `config.previous.json` yedeği eski düz metin anahtarları içerebilir; bunu hassas bir geri dönüş yedeği olarak tutun. Eski sürüme dönmek için uygulamalar kapalıyken bu yedeği kullanın.
 
-Ayar dizinindeki `diagnostics.jsonl` en fazla beş adet 1 MiB dosyaya döner. İçerik oturum kimliği, sıra, geçen süre, aşama, boyut ve kısa hata kodlarıdır; ses, transkript veya API anahtarı yazılmaz. Son Sonuç → Ayrıntılar/Teşhis alanı dışarıya kopyalanmadan önce görülebilir. Normal kullanım otomatik WAV/transkript geçmişi oluşturmaz. Elle kaydettiğiniz dosya ve sistem panosu bu bellek politikasından ayrıdır.
+Ayar dizinindeki `diagnostics.jsonl` en fazla beş adet 1 MiB dosyaya döner. İçerik oturum kimliği, sıra, UTC zaman, geçen süre, aşama, boyut, HTTP durumu ve kısa hata kodlarıdır; ses, transkript, API anahtarı veya istek/yanıt gövdesi yazılmaz. Temiz kapanmayan bir çalışma bir sonraki açılışta işaretlenir; yerel çökme izi `crash-traceback.log` dosyasına yazılır. Bir hatayı bildirme adımları [güvenilirlik durumunda](docs/reliability.md#bir-hata-olursa-teşhis-kaydını-yakalamak-u01-ve-sonrası) anlatılır. Son Sonuç → Ayrıntılar/Teşhis alanı dışarıya kopyalanmadan önce görülebilir. Normal kullanım otomatik WAV/transkript geçmişi oluşturmaz. Elle kaydettiğiniz dosya ve sistem panosu bu bellek politikasından ayrıdır.
 
 ---
 
@@ -144,14 +145,14 @@ Sistem Ayarları → Kısayollar bölümünde `katip --toggle` komutuna bir kıs
 atayabilirsiniz. Bu yöntem açık olan Kâtip örneğini tetikler ve klavyeye doğrudan
 erişim gerektirmez. Aynı tuş birleşimini iki dinleyicide birden kullanmayın.
 
-Wayland'da genel bir aktif pencere kimliği API'si olmadığı için bu aday otomatik teslimi doğrulayamaz ve sonucu kopyalamaya hazır tutar. Ayarlardaki açık hedefli yapıştırma testinde `wl-copy` ve çalışan bir `ydotoold` gerekir.
+Wayland'da genel bir aktif pencere kimliği API'si yoktur; metin odaktaki pencereye yapıştırılır. Pano için `wl-copy` (wl-clipboard) gerekir. Yapıştırma sırasıyla çalışan bir `ydotoold`, `wtype` (yalnız sway/Hyprland gibi wlroots masaüstleri) veya masaüstünün **Uzaktan Denetim (RemoteDesktop)** izniyle yapılır; KDE ve GNOME bu izni ilk yapıştırmada bir kez sorar ve hatırlar. Hiçbiri yoksa metin panoya alınır ve bildirilir. Wayland'da `xdotool` kullanılmaz.
 Fedora'da paketleri `sudo dnf install wl-clipboard ydotool` ile kurabilirsiniz.
 `ydotool` paketinin kurulu olması servisin çalıştığı anlamına gelmez; ayrıca
 istemcinin daemon soketine erişebilmesi gerekir. Fedora'da durumunu
 `systemctl status ydotool` ile kontrol edin. Soket yolu, sahipliği ve servis
 kurulumu dağıtıma göre değişebilir; uygulamayı root olarak çalıştırmayın.
 
-Pano geri yükleme, yalnız sürüm/sahiplik takibi olan Windows ve macOS arka uçlarında desteklenir. Linux'ta bu seçenek açıkken işlem mevcut panoyu koruyarak durur; sonucu elle kopyalayabilir veya seçeneği kapatabilirsiniz.
+Pano geri yükleme, pano yalnız düz metin içeriyorsa yapılır ve panoda hâlâ Kâtip'in yazdığı metin varsa eski içerik geri konur (Windows/macOS'ta ek olarak pano sürüm numarası denetlenir). Arada başka bir şey kopyaladıysanız dokunulmaz.
 
 Terminalde Ctrl+Shift+V göndermek için **Terminal Uyumluluk Modu**nu açın.
 Normal metin alanları Ctrl+V bekliyorsa bu modu kapatın; Kâtip şu anda hedef

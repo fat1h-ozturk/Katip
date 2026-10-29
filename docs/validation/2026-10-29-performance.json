@@ -1,101 +1,105 @@
 {
-  "environment": "Linux source; Python 3.11.17; synthetic PCM; VAD accepts all frames; RSS sampled by GUI timer",
+  "environment": "Linux source tree, Python 3.11.17, locked env; synthetic PCM; VAD accepts all frames; RSS sampled by a 10 ms GUI timer. Re-run for this branch on 2026-10-29.",
+  "thresholds": {
+    "gui_p95_ms": 100,
+    "gui_p99_ms": 250
+  },
   "cases": [
     {
       "duration": 40,
       "input_rate": 16000,
-      "elapsed": 0.293,
-      "extra_rss_mib": 4.31,
-      "gui_p95_ms": 25.39,
-      "gui_p99_ms": 25.39
+      "elapsed": 0.273,
+      "extra_rss_mib": 5.6,
+      "gui_p95_ms": 20.53,
+      "gui_p99_ms": 20.53
     },
     {
       "duration": 60,
       "input_rate": 16000,
-      "elapsed": 0.425,
-      "extra_rss_mib": 4.26,
-      "gui_p95_ms": 20.63,
-      "gui_p99_ms": 25.42
+      "elapsed": 0.414,
+      "extra_rss_mib": 6.18,
+      "gui_p95_ms": 20.4,
+      "gui_p99_ms": 26.23
     },
     {
       "duration": 300,
       "input_rate": 16000,
-      "elapsed": 2.118,
-      "extra_rss_mib": 38.07,
-      "gui_p95_ms": 25.49,
-      "gui_p99_ms": 26.0
+      "elapsed": 2.055,
+      "extra_rss_mib": 28.91,
+      "gui_p95_ms": 25.4,
+      "gui_p99_ms": 25.45
     },
     {
       "duration": 600,
       "input_rate": 16000,
-      "elapsed": 4.2,
-      "extra_rss_mib": 75.88,
-      "gui_p95_ms": 25.48,
-      "gui_p99_ms": 30.55
+      "elapsed": 4.112,
+      "extra_rss_mib": 57.52,
+      "gui_p95_ms": 25.4,
+      "gui_p99_ms": 28.1
     },
     {
       "duration": 40,
       "input_rate": 44100,
-      "elapsed": 0.268,
+      "elapsed": 0.267,
       "extra_rss_mib": 0.02,
-      "gui_p95_ms": 25.42,
-      "gui_p99_ms": 25.42
+      "gui_p95_ms": 20.34,
+      "gui_p99_ms": 20.34
     },
     {
       "duration": 60,
       "input_rate": 44100,
-      "elapsed": 0.394,
-      "extra_rss_mib": 0.0,
-      "gui_p95_ms": 30.44,
-      "gui_p99_ms": 30.44
+      "elapsed": 0.406,
+      "extra_rss_mib": 0.01,
+      "gui_p95_ms": 25.39,
+      "gui_p99_ms": 25.4
     },
     {
       "duration": 300,
       "input_rate": 44100,
-      "elapsed": 2.034,
+      "elapsed": 2.03,
       "extra_rss_mib": 16.73,
-      "gui_p95_ms": 25.44,
-      "gui_p99_ms": 30.56
+      "gui_p95_ms": 25.42,
+      "gui_p99_ms": 25.67
     },
     {
       "duration": 600,
       "input_rate": 44100,
-      "elapsed": 4.165,
+      "elapsed": 4.142,
       "extra_rss_mib": 46.59,
-      "gui_p95_ms": 25.46,
-      "gui_p99_ms": 30.49
-    },
-    {
-      "duration": 40,
-      "input_rate": 48000,
-      "elapsed": 0.268,
-      "extra_rss_mib": 6.13,
-      "gui_p95_ms": 25.5,
-      "gui_p99_ms": 25.5
-    },
-    {
-      "duration": 60,
-      "input_rate": 48000,
-      "elapsed": 0.398,
-      "extra_rss_mib": 3.08,
-      "gui_p95_ms": 25.47,
+      "gui_p95_ms": 25.38,
       "gui_p99_ms": 25.47
     },
     {
+      "duration": 40,
+      "input_rate": 48000,
+      "elapsed": 0.273,
+      "extra_rss_mib": 6.13,
+      "gui_p95_ms": 20.34,
+      "gui_p99_ms": 20.34
+    },
+    {
+      "duration": 60,
+      "input_rate": 48000,
+      "elapsed": 0.408,
+      "extra_rss_mib": 3.08,
+      "gui_p95_ms": 20.42,
+      "gui_p99_ms": 25.83
+    },
+    {
       "duration": 300,
       "input_rate": 48000,
-      "elapsed": 1.989,
+      "elapsed": 2.029,
       "extra_rss_mib": 37.49,
-      "gui_p95_ms": 20.34,
-      "gui_p99_ms": 20.61
+      "gui_p95_ms": 22.92,
+      "gui_p99_ms": 25.4
     },
     {
       "duration": 600,
       "input_rate": 48000,
-      "elapsed": 3.977,
-      "extra_rss_mib": 15.0,
-      "gui_p95_ms": 25.41,
-      "gui_p99_ms": 25.44
+      "elapsed": 4.045,
+      "extra_rss_mib": 15.01,
+      "gui_p95_ms": 25.39,
+      "gui_p99_ms": 25.43
     }
   ]
 }
