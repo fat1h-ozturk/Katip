@@ -325,7 +325,7 @@ class SettingsDialog(QDialog):
         
         row1_layout = QHBoxLayout()
         self.sound_check = QCheckBox("Ses Geri Bildirimi (Bip sesleri)")
-        self.restore_clip_check = QCheckBox("Panoyu geri yükle (sürüm takibi destekleniyorsa)")
+        self.restore_clip_check = QCheckBox("Panoyu geri yükle (değişmediyse)")
         row1_layout.addWidget(self.sound_check)
         row1_layout.addWidget(self.restore_clip_check)
         
@@ -748,7 +748,10 @@ class SettingsDialog(QDialog):
                     "Erişilebilirlik iznini de açın."
                 )
             elif sys.platform.startswith("linux"):
-                help_text = "Linux'ta ydotool servisinin çalıştığını kontrol edin."
+                help_text = (
+                    "X11'de xdotool kurulu olmalıdır. Wayland'da sırasıyla çalışan ydotoold, wtype (wlroots) "
+                    "veya masaüstünün Uzaktan Denetim (RemoteDesktop) izni kullanılır; izin penceresini onaylayın."
+                )
             else:
                 help_text = "İşletim sisteminin klavye denetimi izinlerini kontrol edin."
             QMessageBox.warning(

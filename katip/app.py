@@ -449,6 +449,19 @@ class KatipApp:
     def _on_work_event(self, event):
         if not self.session.accepts(event):
             return
+        try:
+            self._apply_work_event(event)
+        except Exception as error:
+            # A defect here must not leave the session busy forever and every hotkey ignored.
+            self.diagnostics.event("unhandled_exception", stage=self.session.state.value, code="UNEXPECTED_ERROR",
+                                   exception_type=type(error).__name__, source=str(event.kind))
+            self.session.state = State.ERROR
+            self.last_error = self._safe_error(error)
+            self.tray.set_recording(False)
+            self.pill.show_error(self.last_error)
+            self._notify_recovery(self.last_error)
+
+    def _apply_work_event(self, event):
         job = self.session.job
         if event.kind == "phase":
             self.session.transition(event.value)

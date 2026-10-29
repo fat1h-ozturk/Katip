@@ -370,3 +370,15 @@ def test_restore_warning_after_sent_input_is_not_a_failure(tmp_path):
     assert app.session.state == State.COMPLETED
     app.pill.show_success.assert_called_once()
     assert 'geri yüklenemedi' in app.tray.showMessage.call_args.args[1]
+
+
+def test_defect_in_gui_commit_returns_to_a_recoverable_state(tmp_path):
+    app, _ = make_app(tmp_path)
+    app.recorder.discard_audio.side_effect = KeyError('PRIVATE')
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.session.state == State.ERROR and not app.is_busy_processing
+    assert app.pending_audio and 'UNEXPECTED_ERROR' in app.last_error
+    failure = app.diagnostics.snapshot()[-1]
+    assert failure['event'] == 'unhandled_exception' and failure['exception_type'] == 'KeyError'
+    assert 'PRIVATE' not in str(app.diagnostics.snapshot())
