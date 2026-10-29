@@ -427,3 +427,16 @@ def test_digital_silence_is_reported_as_a_microphone_problem_not_no_speech():
         # The samples stay recoverable; the user may still save them.
         assert recorder.has_pending_audio and recorder.raw_wav()
         recorder.terminate()
+
+
+def test_level_meter_treats_one_bit_dither_as_silence():
+    levels = []
+    recorder = AudioRecorder(on_level_callback=levels.append)
+    stream = one_second_stream(recorder, chunk=b'\x01\x00\xff\xff' * 8000)
+    with patch('katip.audio.pyaudio.PyAudio', return_value=fake_portaudio(['Built-in'], stream)):
+        recorder.start_recording()
+        recorder._thread.join(3)
+        with pytest.raises(RuntimeError, match='CAPTURE_SILENT'):
+            recorder.stop_recording()
+        assert levels and max(levels) < .01
+        recorder.terminate()

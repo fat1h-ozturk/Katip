@@ -266,11 +266,12 @@ class AudioRecorder:
                     self.diagnostics.event("failed", stage="capture", code="CAPTURE_LIMIT",
                                            audio_bytes=captured, sample_rate=self._actual_rate)
                     break
-                if data:
+                if data and self.on_level_callback:
                     level = self._compute_rms(data)
                     self._max_level = max(self._max_level or 0.0, level)
-                    if self.on_level_callback:
-                        self.on_level_callback(min(1.0, level * 4.0))
+                    self.on_level_callback(min(1.0, level * 4.0))
+                elif data and (self._max_level or 0.0) < self.SILENT_LEVEL and data.strip(b"\0"):
+                    self._max_level = 1.0  # Without a level meter, any non-zero sample is a signal.
         except CaptureError as exc:
             error = str(exc)
         except Exception as exc:
