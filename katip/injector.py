@@ -26,6 +26,7 @@ class BaseInjector(abc.ABC):
     def __init__(self, restore_clipboard: bool = False):
         self.restore_clipboard = restore_clipboard
         self.last_error = ""
+        self.last_warning = ""
 
     @abc.abstractmethod
     def get_current_clipboard(self) -> Optional[str]:
@@ -56,6 +57,7 @@ class BaseInjector(abc.ABC):
         5. Optionally restores previous clipboard.
         """
         self.last_error = ""
+        self.last_warning = ""
         if before_paste:
             before_paste()
         if not text:
@@ -67,9 +69,6 @@ class BaseInjector(abc.ABC):
             # ASVS 16.5.3: do not replace data that cannot be restored exactly.
             if not self.can_restore_clipboard():
                 self.last_error = "Mevcut pano içeriği güvenle geri yüklenemiyor; pano korunuyor."
-                return False
-            if self.clipboard_revision() is None:
-                self.last_error = "Bu ortamda pano sürümü izlenemiyor; mevcut pano korundu. Metin Son Sonuç menüsünde hazır."
                 return False
             old_clipboard = self.get_current_clipboard()
             if old_clipboard is None:
@@ -88,7 +87,13 @@ class BaseInjector(abc.ABC):
         time.sleep(0.06)
 
         if before_paste:
-            before_paste()
+            try:
+                before_paste()
+            except Exception:
+                # Nothing was pasted; the user's previous clipboard must not stay replaced.
+                if old_clipboard is not None:
+                    self._restore(old_clipboard, text, written_revision)
+                raise
         pasted = self.simulate_paste()
 
         if not pasted:
@@ -97,16 +102,21 @@ class BaseInjector(abc.ABC):
 
         if self.restore_clipboard and old_clipboard is not None:
             time.sleep(0.3)
-            # Both a backend revision and matching content are required.
-            if self.get_current_clipboard() != text:
-                return pasted
-            if self.clipboard_revision() != written_revision:
-                return pasted
-            if not self.set_clipboard(old_clipboard):
-                self.last_error = "Metin yapıştırıldı ancak önceki pano geri yüklenemedi."
-                return False
+            if self._restore(old_clipboard, text, written_revision) is False:
+                # The input was already sent; reporting failure would invite a duplicate paste.
+                self.last_warning = "Girdi gönderildi ancak önceki pano geri yüklenemedi."
 
         return pasted
+
+    def _restore(self, old_clipboard, text, written_revision):
+        """Restore only our own clipboard write; None means the user replaced it meanwhile."""
+        if self.get_current_clipboard() != text:
+            return None
+        # Backends without a revision (Linux) rely on the content check alone.
+        revision = self.clipboard_revision()
+        if revision is not None and revision != written_revision:
+            return None
+        return self.set_clipboard(old_clipboard)
 
 
 class LinuxInjector(BaseInjector):
@@ -190,6 +200,9 @@ class LinuxInjector(BaseInjector):
                     )
                 if res.returncode == 0:
                     return True
+            except subprocess.TimeoutExpired:
+                # Keys may already have been sent; never paste a second time through xdotool.
+                return False
             except Exception as e:
                 print(f"[LinuxInjector] ydotool error: {e}")
 

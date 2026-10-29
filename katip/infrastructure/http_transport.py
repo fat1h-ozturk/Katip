@@ -10,6 +10,7 @@ import json as json_module
 import time
 
 import requests
+from requests.structures import CaseInsensitiveDict
 
 _job = ContextVar("katip_http_job", default=None)
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -32,7 +33,8 @@ class Response:
     def __init__(self, status, body, headers):
         self.status_code = status
         self.content = body
-        self.headers = headers
+        # HTTP/2 lower-cases header names; lookups must not depend on case.
+        self.headers = CaseInsensitiveDict(headers)
         self.text = body.decode("utf-8", errors="replace")
 
     def json(self):
@@ -148,7 +150,8 @@ class HttpSession:
                               network_error=getattr(reply_error, "name", str(reply_error)))
         if error:
             raise error[0]
-        if status is None and reply_error != QNetworkReply.NetworkError.NoError:
+        # Codes below 200 are transport failures; a status line does not make a cut-off body complete.
+        if reply_error != QNetworkReply.NetworkError.NoError and (status is None or reply_error.value < 200):
             raise requests.ConnectionError("Network connection failed")
         return Response(int(status or 0), bytes(chunks), response_headers)
 

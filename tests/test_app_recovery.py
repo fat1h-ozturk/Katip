@@ -330,3 +330,38 @@ def test_clean_exit_is_recorded_once_for_tray_quit_and_logout(tmp_path):
     app._record_app_stopped()
     app._record_app_stopped()
     assert [event['event'] for event in app.app_diagnostics.snapshot()] == ['app_stopped']
+
+
+def test_unverifiable_target_copies_to_clipboard_and_frees_next_dictation(tmp_path):
+    app, _ = make_app(tmp_path)
+    app.session.job.target = None
+    app.injector.restore_clipboard = False
+    app.injector.set_clipboard.return_value = True
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    app.injector.set_clipboard.assert_called_once_with('Complete text')
+    app.injector.inject_text.assert_not_called()
+    assert app.session.state == State.READY and not app.pending_audio
+    assert 'panoya kopyalandı' in app.last_error and app.last_text == 'Complete text'
+    assert app.diagnostics.snapshot()[-1]['code'] == 'CLIPBOARD_ONLY'
+
+
+def test_failed_clipboard_copy_keeps_audio_for_manual_recovery(tmp_path):
+    app, _ = make_app(tmp_path)
+    app.session.job.target = None
+    app.injector.restore_clipboard = False
+    app.injector.set_clipboard.return_value = False
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.session.state == State.READY and app.pending_audio
+    assert 'Son Sonuç' in app.last_error
+
+
+def test_restore_warning_after_sent_input_is_not_a_failure(tmp_path):
+    app, _ = make_app(tmp_path)
+    app.injector.last_warning = 'Girdi gönderildi ancak önceki pano geri yüklenemedi.'
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    assert app.session.state == State.COMPLETED
+    app.pill.show_success.assert_called_once()
+    assert 'geri yüklenemedi' in app.tray.showMessage.call_args.args[1]

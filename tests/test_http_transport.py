@@ -29,6 +29,16 @@ def server(monkeypatch):
             if self.path == '/disconnect':
                 self.close_connection = True
                 return
+            if self.path == '/truncated':
+                # Headers promise more than the body delivers before the peer closes.
+                self.send_response(200)
+                self.send_header('Content-Length', '200')
+                self.send_header('retry-after', '7')
+                self.end_headers()
+                self.wfile.write(b'{"text":"Merhaba yalniz')
+                self.wfile.flush()
+                self.close_connection = True
+                return
             status = int(self.path.rsplit('/', 1)[-1]) if self.path.startswith('/status/') else (429 if self.path == '/rate' else 200)
             self.send_response(status)
             payload = b'x' * 1024 if self.path == '/large' else b'{"text":"okay"}'
@@ -169,3 +179,15 @@ def test_request_log_names_cancellation_and_upload_size(server, monkeypatch):
     job.diagnostics = Diagnostics()
     run_request(server, '/large', job=job, json={})
     assert job.diagnostics.snapshot()[-1]['code'] == 'RESPONSE_TOO_LARGE'
+
+
+def test_cut_off_success_body_is_a_connection_error_not_a_transcript(server):
+    response = run_request(server, '/truncated', json={}, timeout=.5)
+    assert isinstance(response, requests.ConnectionError)
+
+
+def test_retry_hint_survives_lower_case_http2_header_names():
+    from katip.infrastructure.http_transport import Response
+    from katip.services.common import http_status_message
+    response = Response(429, b'', {'retry-after': '7'})
+    assert '7 saniye' in http_status_message('Groq', response)

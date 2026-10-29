@@ -15,6 +15,8 @@ from ..domain.errors import ProviderError, ConfigurationError
 from .common import start_stt, http_status_message
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+# Inline requests are limited to 20 MB in total; keep headroom for the prompt and JSON.
+GEMINI_INLINE_LIMIT = 19 * 1000 * 1000
 
 class GeminiService:
     """Service for processing audio into polished text using Gemini Multimodal models."""
@@ -45,6 +47,9 @@ class GeminiService:
         start_time = time.time()
         start_stt(self, len(audio_bytes))
         b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
+        if len(b64_audio) > GEMINI_INLINE_LIMIT:
+            raise ProviderError("AUDIO_TOO_LARGE", "stt", "Kayıt Gemini'nin tek istek sınırını aşıyor (yaklaşık 7 dakika); "
+                                "kayıt korunuyor. Sesi kaydedebilir veya başka bir sağlayıcıyla yeniden işleyebilirsiniz.")
         prompt = build_system_prompt(mode=mode, custom_vocabulary=custom_vocabulary)
 
         url = GEMINI_API_URL.format(model=self.model)

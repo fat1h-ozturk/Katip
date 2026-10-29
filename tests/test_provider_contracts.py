@@ -162,3 +162,33 @@ def test_invalid_provider_output_is_never_ready_for_delivery(adapter):
         result = adapter.service.transcribe_and_format(b'fake-audio')
         assert result.raw_transcript == adapter.raw and result.warning
         assert result.formatted_text is None
+
+
+@pytest.mark.parametrize('code', ['CANCELLED', 'DEADLINE'])
+def test_groq_formatter_propagates_cancel_and_deadline(code):
+    from katip.domain.errors import ProviderError
+    from katip.services.groq import GroqService
+    service = GroqService('fake')
+    with patch.object(service._session, 'post', side_effect=ProviderError(code, 'job', 'stop')):
+        with pytest.raises(ProviderError, match=code):
+            service.format_transcript('Ham metin')
+
+
+@pytest.mark.parametrize('status, expected', [(413, 'yükleme sınırını'), (429, '12 saniye')])
+def test_groq_stt_status_messages_are_actionable(status, expected):
+    from katip.services.groq import GroqService
+    service = GroqService('fake')
+    response = Mock(status_code=status, headers={'Retry-After': '12'})
+    with patch.object(service._session, 'post', return_value=response):
+        with pytest.raises(RuntimeError, match=expected):
+            service.transcribe_and_format(b'RIFF')
+
+
+def test_gemini_rejects_audio_over_inline_limit_before_upload(monkeypatch):
+    from katip.services import gemini
+    monkeypatch.setattr(gemini, 'GEMINI_INLINE_LIMIT', 8)
+    service = gemini.GeminiService(api_key='fake')
+    with patch.object(service._session, 'post') as post:
+        with pytest.raises(RuntimeError, match='AUDIO_TOO_LARGE'):
+            service.transcribe_and_format(b'0123456789')
+    post.assert_not_called()

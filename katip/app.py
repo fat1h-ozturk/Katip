@@ -475,11 +475,21 @@ class KatipApp:
                 self.session.transition(State.DELIVERING)
                 self._spawn(self._deliver_worker, job, result)
         elif event.kind == "ready_unverified":
-            self._on_processing_ready(self.last_text, "Hedef pencere bu masaüstünde doğrulanamıyor. Metin hazır; Son Sonuç menüsünden kopyalayın.")
+            if event.value:
+                # The text is safely on the clipboard; holding the audio would block the next dictation.
+                self.recorder.discard_audio()
+                self.pending_audio = b""
+                self._on_processing_ready(self.last_text, "Hedef pencere bu masaüstünde (ör. Wayland) doğrulanamadığından "
+                                          "otomatik yapıştırılmadı. Metin panoya kopyalandı; Ctrl+V ile yapıştırın.")
+            else:
+                self._on_processing_ready(self.last_text, "Hedef pencere bu masaüstünde (ör. Wayland) doğrulanamadığından "
+                                          "otomatik yapıştırılmadı. Metin hazır; Son Sonuç menüsünden kopyalayın.")
         elif event.kind == "delivered":
-            success, error = event.value
+            success, error, warning = event.value
             if success:
                 self._on_processing_success(self.last_text, self.last_groq_result.latency)
+                if warning:
+                    self._notify_recovery(warning)
             else:
                 self._on_processing_error(error)
         elif event.kind == "reformatted":
@@ -491,7 +501,11 @@ class KatipApp:
             job.check()
             from .platform.target import target_unchanged
             if job.target is None:
-                self._emit(job, "ready_unverified")
+                # Never send input to an unverified window; the clipboard is safe unless the user asked to keep it.
+                copied = not self.injector.restore_clipboard and self.injector.set_clipboard(result.text)
+                self.diagnostics.event("delivery_finished", stage="delivery",
+                                       code="CLIPBOARD_ONLY" if copied else "TARGET_UNVERIFIED")
+                self._emit(job, "ready_unverified", copied)
                 return
             if not target_unchanged(job.target):
                 self._emit(job, "error", "[TARGET_CHANGED] Hedef pencere değişti veya doğrulanamıyor; metin Son Sonuç menüsünde hazır.")
@@ -503,7 +517,8 @@ class KatipApp:
                     raise ProviderError("TARGET_CHANGED", "delivery", "Hedef pencere değişti; metin Son Sonuç menüsünde korunuyor.")
             success = self.injector.inject_text(result.text, before_paste=check_delivery)
             self.diagnostics.event("delivery_finished", stage="delivery", code="INPUT_SENT" if success else "DELIVERY_FAILED")
-            self._emit(job, "delivered", (success, self.injector.last_error or "[DELIVERY_FAILED] Metin Son Sonuç menüsünde korunuyor."))
+            self._emit(job, "delivered", (success, self.injector.last_error or "[DELIVERY_FAILED] Metin Son Sonuç menüsünde korunuyor.",
+                                          getattr(self.injector, "last_warning", "")))
         except Exception as error:
             self._emit(job, "error", self._safe_error(error))
 
@@ -760,6 +775,7 @@ class KatipApp:
 
     def _reformat_text_worker(self, original, service, mode, vocabulary, aliases, job=None):
         job = job or self.session.job
+        service.diagnostics = self.diagnostics
         try:
             with execution_scope(job):
                 candidate = service.format_transcript(original.raw_transcript, mode=mode,

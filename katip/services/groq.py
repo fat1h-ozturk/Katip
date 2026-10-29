@@ -130,6 +130,10 @@ class GroqService:
         if response.status_code != 200:
             if response.status_code == 401:
                 raise ProviderError("HTTP_ERROR", "stt", "Groq API anahtarı geçersiz veya iptal edilmiş (401). Ayarlar'dan güncelleyin.")
+            if response.status_code == 413:
+                raise ProviderError("HTTP_ERROR", "stt", "Ses dosyası Groq yükleme sınırını aşıyor (HTTP 413); kayıt korunuyor. Sesi kaydedebilirsiniz.")
+            if response.status_code == 429:
+                raise ProviderError("HTTP_ERROR", "stt", http_status_message("Groq Whisper", response))
             raise ProviderError("HTTP_ERROR", "stt", f"Groq Whisper Hatası (HTTP {response.status_code}). Lütfen tekrar deneyin.")
         try:
             body = response.json()
@@ -210,6 +214,8 @@ class GroqService:
             text = _parse_output(choice["message"]["content"])
             return replace(base, formatted_text=text, latency=round(time.monotonic() - start, 2),
                            omitted_formatter_terms=omitted, literal_changes=compare_literals(raw_transcript, text))
+        except ProviderError:
+            raise  # Cancellation and the job deadline are not formatter output failures.
         except Exception:
             # ASVS 16.5.2: preserve complete input without logging private response data.
             self.last_warning = f"{failure_detail} {_FAILURE_WARNING}".strip()

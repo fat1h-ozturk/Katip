@@ -81,8 +81,8 @@ def run_process(cmd, *, capture_output=True, text=True, encoding="utf-8", timeou
         if pid and os.name == "posix":
             try:
                 os.killpg(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            except OSError:
+                pass  # The group already exited; cleanup must not fail a finished run.
         if close_job:
             close_job()
         if process.state() != QProcess.ProcessState.NotRunning:
