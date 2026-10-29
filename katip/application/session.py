@@ -52,6 +52,7 @@ class Job:
     publish: object = field(default=None, repr=False)
     service: object = field(default=None, repr=False)
     target: object = field(default=None, repr=False)
+    diagnostics: object = field(default=None, repr=False)
 
     def check(self):
         if self.cancelled.is_set():

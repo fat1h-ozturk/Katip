@@ -2,6 +2,7 @@
 import io
 import json
 import struct
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import wave
 
@@ -206,7 +207,15 @@ def test_device_failure_at_25_seconds_keeps_every_received_sample():
             assert wav.getnframes() == 25 * 16000
         assert 'CAPTURE_DEVICE_LOST' in recorder.last_error
         recorder.on_error_callback.assert_called_once()
-        assert 'PRIVATE' not in json.dumps(recorder.diagnostics.snapshot())
+        events = recorder.diagnostics.snapshot()
+        assert 'PRIVATE' not in json.dumps(events)
+        # The log alone tells an incident report at which second capture stopped.
+        assert events[1] == {**events[1], 'event': 'stream_opened', 'sample_rate': 16000}
+        progress = [event['audio_bytes'] for event in events if event['event'] == 'capture_progress']
+        assert progress == [5 * 32000 * n for n in range(1, 6)]
+        failure = events[-1]
+        assert failure['code'] == 'CAPTURE_DEVICE_LOST' and failure['errno'] == -9996
+        assert failure['audio_bytes'] / (2 * failure['sample_rate']) == 25
         recorder.terminate()
 
 
@@ -282,3 +291,59 @@ def test_diagnostic_loggers_reuse_one_bounded_handler(tmp_path):
     assert all('PRIVATE' not in path.read_text() for path in paths)
     handler.close()
     logger.removeHandler(handler)
+
+
+def test_diagnostic_records_carry_utc_wall_time():
+    diagnostics = Diagnostics(clock=lambda: 0.0, wall_clock=lambda: 1793273366)
+    assert diagnostics.event('app_started')['ts'] == '2026-10-29T11:29:26Z'
+
+
+@pytest.mark.parametrize('previous, unclean', [
+    (None, False), ('app_stopped', False), ('stt_started', True), ('capture_progress', True)])
+def test_start_marks_a_previous_run_that_never_stopped(tmp_path, previous, unclean):
+    from katip.diagnostics import LOG_NAME, record_app_start
+    if previous:
+        lines = ['not json', json.dumps({'event': 'recording_started'}), json.dumps({'event': previous}), '']
+        (tmp_path / LOG_NAME).write_text('\n'.join(lines), encoding='utf-8')
+    diagnostics = record_app_start(tmp_path, None, '9.9.9')
+    events = diagnostics.snapshot()
+    assert events[-1]['event'] == 'app_started' and events[-1]['version'] == '9.9.9'
+    assert (events[0]['event'] == 'previous_run_unclean') is unclean
+    if unclean:
+        # The last stage written before the crash is the first thing to inspect.
+        assert events[0]['code'] == 'PROCESS_EXIT_UNCLEAN' and events[0]['source'] == previous
+
+
+def test_unreadable_or_contentless_log_is_not_an_unclean_exit(tmp_path):
+    from katip.diagnostics import LOG_NAME, last_logged_event
+    (tmp_path / LOG_NAME).write_text('[]\ngarbage\n', encoding='utf-8')
+    assert last_logged_event(tmp_path) is None
+    assert last_logged_event(tmp_path / 'missing') is None
+
+
+def test_crash_reporting_logs_only_exception_types(tmp_path, monkeypatch):
+    import sys
+    import threading
+    import faulthandler
+    from katip import diagnostics as module
+    enable = Mock()
+    monkeypatch.setattr(faulthandler, 'enable', enable)
+    monkeypatch.setattr(sys, 'excepthook', Mock())
+    monkeypatch.setattr(threading, 'excepthook', Mock())
+    (tmp_path / module.CRASH_LOG_NAME).write_text('x' * (module._CRASH_LOG_LIMIT + 1))
+    diagnostics = Diagnostics()
+    try:
+        assert module.install_crash_reporting(tmp_path, diagnostics)
+        assert enable.call_args.kwargs == {'file': module._crash_file, 'all_threads': True}
+        sys.excepthook(ValueError, ValueError('PRIVATE TRANSCRIPT'), None)
+        threading.excepthook(SimpleNamespace(exc_type=KeyError))
+    finally:
+        module._crash_file.close()
+    # An oversized trace file is replaced instead of growing without bound.
+    assert (tmp_path / module.CRASH_LOG_NAME).stat().st_size == 0
+    events = diagnostics.snapshot()
+    assert [event['exception_type'] for event in events] == ['ValueError', 'KeyError']
+    assert 'PRIVATE' not in json.dumps(events)
+    blocked = tmp_path / 'file'
+    blocked.write_text('')
+    assert not module.install_crash_reporting(blocked / 'sub', diagnostics)

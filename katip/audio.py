@@ -95,6 +95,7 @@ class AudioRecorder:
     FORMAT = pyaudio.paInt16
     MAX_SECONDS = 600
     MAX_BYTES = 64 * 1024 * 1024
+    PROGRESS_SECONDS = 5
 
     def __init__(self, on_level_callback: Optional[Callable[[float], None]] = None, device_index: int = -1, vad_mode: int = 2,
                  on_error_callback: Optional[Callable[[str], None]] = None):
@@ -163,11 +164,12 @@ class AudioRecorder:
             self.is_recording = False
             self._stop.set()
             worker = self._thread
-        self.diagnostics.event("stop_requested", stage="capture")
+        self.diagnostics.event("drain_started", stage="capture")
         if worker and worker is not threading.current_thread():
             worker.join(timeout=2.0)
             if worker.is_alive():
-                self.diagnostics.event("failed", stage="capture", code="CAPTURE_DRAIN_TIMEOUT")
+                self.diagnostics.event("failed", stage="capture", code="CAPTURE_DRAIN_TIMEOUT",
+                                       audio_bytes=self._captured_bytes, sample_rate=self._actual_rate)
                 raise CaptureError("[CAPTURE_DRAIN_TIMEOUT] Mikrofon durdurulamadı; kayıt korunuyor. Lütfen tekrar deneyin.")
         with self._lock:
             if not self._frames:
@@ -175,7 +177,8 @@ class AudioRecorder:
             self._capture_pcm = b"".join(self._frames)
             self._frames = []
             pcm = self._capture_pcm
-        self.diagnostics.event("capture_stopped", stage="capture", audio_bytes=len(pcm))
+        self.diagnostics.event("capture_stopped", stage="capture", audio_bytes=len(pcm),
+                               sample_rate=self._actual_rate)
         if self.last_error:
             return self._wav(pcm, self._actual_rate)
         self.diagnostics.event("preprocessing_started", stage="preprocessing")
@@ -245,6 +248,10 @@ class AudioRecorder:
                     if rate == 44100:
                         raise
             self._stream = stream
+            self.diagnostics.event("stream_opened", stage="capture", sample_rate=self._actual_rate)
+            # Periodic progress shows when capture stopped advancing, even if the process dies later.
+            progress_step = self.PROGRESS_SECONDS * self._actual_rate * 2
+            next_progress = progress_step
             while not stop.is_set():
                 data = stream.read(self.CHUNK_SIZE, exception_on_overflow=False)
                 with self._lock:
@@ -255,9 +262,15 @@ class AudioRecorder:
                         self._frames.append(kept)
                         self._captured_bytes += len(kept)
                     reached_limit = self._captured_bytes >= limit
+                    captured = self._captured_bytes
+                if captured >= next_progress:
+                    next_progress += progress_step
+                    self.diagnostics.event("capture_progress", stage="capture", audio_bytes=captured,
+                                           sample_rate=self._actual_rate)
                 if reached_limit:
                     error = "[CAPTURE_LIMIT] Kayıt 10 dakika veya 64 MiB sınırına ulaştı; alınan ses korunuyor."
-                    self.diagnostics.event("failed", stage="capture", code="CAPTURE_LIMIT")
+                    self.diagnostics.event("failed", stage="capture", code="CAPTURE_LIMIT",
+                                           audio_bytes=captured, sample_rate=self._actual_rate)
                     break
                 if self.on_level_callback and data:
                     self.on_level_callback(min(1.0, self._compute_rms(data) * 4.0))
@@ -265,7 +278,8 @@ class AudioRecorder:
             if not stop.is_set():
                 code = "CAPTURE_DEVICE_LOST" if isinstance(exc, OSError) and getattr(exc, "errno", None) in (-9985, -9996, 19) else "CAPTURE_READ_ERROR"
                 self.diagnostics.event("failed", stage="capture", code=code,
-                                       exception_type=type(exc).__name__, errno=getattr(exc, "errno", 0) or 0)
+                                       exception_type=type(exc).__name__, errno=getattr(exc, "errno", 0) or 0,
+                                       audio_bytes=self._captured_bytes, sample_rate=self._actual_rate)
                 error = f"[{code}] Mikrofon kaydı kesildi; alınan ses korunuyor. Mikrofon bağlantısını ve izinlerini kontrol edin."
         finally:
             if stream is not None:

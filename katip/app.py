@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QH
 from .application.session import JobEvent, SessionController, State
 from .domain.models import CAPABILITIES
 from .domain.errors import ProviderError
-from .diagnostics import Diagnostics, diagnostic_logger
+from .diagnostics import Diagnostics, diagnostic_logger, install_crash_reporting, record_app_start
 from .infrastructure.http_transport import execution_scope
 from .audio import AudioRecorder
 from .config import ConfigManager, DEFAULT_GEMINI_MODEL
@@ -60,7 +60,14 @@ class KatipApp:
         from .infrastructure.secrets import SecretStore
         self.config = config if config is not None else ConfigManager(secret_store=SecretStore(CONFIG_FILE))
         self.session = SessionController()
-        self.diagnostics = Diagnostics(logger=diagnostic_logger(self.config.config_file.parent))
+        from . import __version__
+        log_directory = self.config.config_file.parent
+        self.diagnostics = Diagnostics(logger=diagnostic_logger(log_directory))
+        self.app_diagnostics = record_app_start(log_directory, self.diagnostics._logger, __version__)
+        install_crash_reporting(log_directory, self.app_diagnostics)
+        self._app_stopped = False
+        # A desktop logout ends the event loop without the tray's quit action.
+        q_app.aboutToQuit.connect(self._record_app_stopped)
         self._capture_job_id = None
         self._target = None
         self.pending_audio = b""
@@ -324,6 +331,9 @@ class KatipApp:
         job.target = self._target
         self.diagnostics = Diagnostics(logger=getattr(self.diagnostics, "_logger", None))
         self.diagnostics.job_id = job.id
+        job.diagnostics = self.diagnostics
+        self.diagnostics.event("recording_requested", stage="capture",
+                               provider=str(job.settings.get("provider", "gemini")))
         job.service = self._service(job.settings.get("provider", "gemini"))
         self._capture_job_id = job.id
         self.recorder.diagnostics = self.diagnostics
@@ -372,6 +382,7 @@ class KatipApp:
             self.session.begin(self.config.data)
         job = self.session.job
         job.publish = lambda kind, value: self._emit(job, kind, value)
+        job.diagnostics = self.diagnostics
         import time
         job.deadline = time.monotonic() + 180
         self.last_error = ""
@@ -435,7 +446,9 @@ class KatipApp:
             self.pending_audio = event.value
             self._start_processing(event.value, auto_paste=False)
         elif event.kind == "error":
-            self.diagnostics.event("failed", code=str(event.value).split("]")[0].lstrip("["))
+            # The session state names the stage that was running when the job failed.
+            self.diagnostics.event("failed", stage=self.session.state.value,
+                                   code=str(event.value).split("]")[0].lstrip("["))
             self._on_processing_error(event.value)
         elif event.kind == "transcript":
             self.last_groq_result = event.value
@@ -528,6 +541,7 @@ class KatipApp:
         if self.is_busy_processing or self.pending_audio:
             self._notify_recovery(error_message)
             return
+        self.diagnostics.event("stop_requested", stage="capture", source="capture_error")
         self.session.transition(State.DRAINING)
         self._spawn(self._drain_worker, self.session.job)
 
@@ -933,4 +947,10 @@ class KatipApp:
                 service._session.close()
         self.last_text = ""
         self.last_groq_result = None
+        self._record_app_stopped()
         self.q_app.quit()
+
+    def _record_app_stopped(self) -> None:
+        if not getattr(self, "_app_stopped", True):
+            self._app_stopped = True
+            self.app_diagnostics.event("app_stopped")

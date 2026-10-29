@@ -310,3 +310,23 @@ def test_target_change_during_clipboard_sync_prevents_paste(tmp_path, monkeypatc
     app._process_audio_worker(app.pending_audio)
     drain(app)
     assert app.pending_audio and 'TARGET_CHANGED' in app.last_error
+
+
+def test_failure_log_names_the_stage_that_was_running(tmp_path):
+    from katip.domain.errors import ProviderError
+    app, service = make_app(tmp_path)
+    service.transcribe_and_format.side_effect = ProviderError('NETWORK_TIMEOUT', 'stt', 'timeout')
+    app._process_audio_worker(app.pending_audio)
+    drain(app)
+    failure = app.diagnostics.snapshot()[-1]
+    assert failure['event'] == 'failed'
+    assert failure['stage'] == 'transcribing' and failure['code'] == 'NETWORK_TIMEOUT'
+
+
+def test_clean_exit_is_recorded_once_for_tray_quit_and_logout(tmp_path):
+    app, _ = make_app(tmp_path)
+    app.app_diagnostics = Diagnostics()
+    app._app_stopped = False
+    app._record_app_stopped()
+    app._record_app_stopped()
+    assert [event['event'] for event in app.app_diagnostics.snapshot()] == ['app_stopped']

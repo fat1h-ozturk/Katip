@@ -90,6 +90,11 @@ class HttpSession:
             body = QByteArray(data or b"")
         for key, value in merged.items():
             request.setRawHeader(key.encode("ascii"), str(value).encode("utf-8"))
+        diagnostics = getattr(job, "diagnostics", None)
+        host = QUrl(url).host()
+        if diagnostics is not None:
+            size = sum(len(part[1]) for part in files.values()) if files else body.size()
+            diagnostics.event("http_started", stage="network", host=host, request_bytes=size)
         reply = manager.post(request, body)
         if multipart:
             multipart.setParent(reply)
@@ -134,11 +139,28 @@ class HttpSession:
         manager.deleteLater()
         from PySide6.QtCore import QEvent
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        if diagnostics is not None:
+            # Only the class of failure and Qt's error name are logged; never bodies or messages.
+            diagnostics.event("http_finished", stage="network", host=host,
+                              code=_outcome(error[0] if error else None, status),
+                              http_status=int(status or 0),
+                              duration_ms=round((time.monotonic() - started) * 1000),
+                              network_error=getattr(reply_error, "name", str(reply_error)))
         if error:
             raise error[0]
         if status is None and reply_error != QNetworkReply.NetworkError.NoError:
             raise requests.ConnectionError("Network connection failed")
         return Response(int(status or 0), bytes(chunks), response_headers)
+
+
+def _outcome(error, status):
+    if error is None:
+        return "OK" if status is not None else "NETWORK_CONNECTION"
+    if isinstance(error, requests.Timeout):
+        return "NETWORK_TIMEOUT"
+    if isinstance(error, requests.RequestException):
+        return "RESPONSE_TOO_LARGE"
+    return str(getattr(error, "code", "CANCELLED"))
 
 
 def http_post(url, **kwargs):

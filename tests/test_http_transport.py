@@ -130,3 +130,42 @@ def test_plain_body_and_oversized_response_are_bounded(server, monkeypatch):
 def test_transport_refuses_to_block_gui_thread(server):
     with pytest.raises(RuntimeError, match='background worker'):
         HttpSession().post(server.url, json={})
+
+
+@pytest.mark.parametrize('path, kwargs, code, status', [
+    ('/status/500', {'json': {}}, 'OK', 500),
+    ('/slow', {'json': {}, 'timeout': .05}, 'NETWORK_TIMEOUT', 0),
+    ('/disconnect', {'json': {}, 'timeout': .5}, 'NETWORK_CONNECTION', 0),
+])
+def test_each_request_logs_stage_timing_and_outcome_without_content(server, path, kwargs, code, status):
+    from katip.diagnostics import Diagnostics
+    job = Job({})
+    job.diagnostics = Diagnostics()
+    run_request(server, path, job=job, **kwargs)
+    started, finished = job.diagnostics.snapshot()
+    assert started['event'] == 'http_started' and started['host'] == '127.0.0.1'
+    assert started['request_bytes'] == 2
+    assert finished['event'] == 'http_finished' and finished['code'] == code
+    assert finished['http_status'] == status and finished['duration_ms'] >= 0
+    assert 'network_error' in finished and 'okay' not in json.dumps(job.diagnostics.snapshot())
+
+
+def test_request_log_names_cancellation_and_upload_size(server, monkeypatch):
+    from katip.diagnostics import Diagnostics
+    job = Job({})
+    job.diagnostics = Diagnostics()
+    timer = threading.Timer(.05, job.cancelled.set)
+    timer.start()
+    try:
+        run_request(server, '/slow', job=job, data={'model': 'whisper'},
+                    files={'file': ('audio.wav', b'RIFF-sample', 'audio/wav')})
+    finally:
+        timer.join(1)
+    started, finished = job.diagnostics.snapshot()
+    assert started['request_bytes'] == len(b'RIFF-sample')
+    assert finished['code'] == 'CANCELLED'
+    monkeypatch.setattr('katip.infrastructure.http_transport.MAX_RESPONSE_BYTES', 128)
+    job = Job({})
+    job.diagnostics = Diagnostics()
+    run_request(server, '/large', job=job, json={})
+    assert job.diagnostics.snapshot()[-1]['code'] == 'RESPONSE_TOO_LARGE'
