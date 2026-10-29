@@ -2,11 +2,17 @@
 
 import hashlib
 
+from ..runtime import app_id
+
 
 class SecretStore:
     def __init__(self, config_path):
+        # References are random UUIDs, so one stable service per profile cannot collide and
+        # survives a relocated/symlinked home or redirected APPDATA.
+        self.service = f"katip:{app_id()}"
         digest = hashlib.sha256(str(config_path.resolve()).encode()).hexdigest()[:24]
-        self.service = f"katip:{digest}"
+        # Candidate builds stored entries under a path-derived name; read and purge them too.
+        self.legacy_service = f"katip:{digest}"
 
     def _backend(self):
         import keyring
@@ -20,7 +26,11 @@ class SecretStore:
 
     def get(self, reference):
         try:
-            return self._backend().get_password(self.service, reference)
+            backend = self._backend()
+            value = backend.get_password(self.service, reference)
+            if value is None:
+                value = backend.get_password(self.legacy_service, reference)
+            return value
         except Exception:
             raise RuntimeError("Anahtar kasası okunamadı; önceki anahtar kaydı korundu.") from None
 
@@ -36,8 +46,9 @@ class SecretStore:
     def delete(self, reference):
         try:
             backend = self._backend()
-            if backend.get_password(self.service, reference) is not None:
-                backend.delete_password(self.service, reference)
+            for service in (self.service, self.legacy_service):
+                if backend.get_password(service, reference) is not None:
+                    backend.delete_password(service, reference)
             return True
         except Exception:
             return False

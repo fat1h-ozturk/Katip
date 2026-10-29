@@ -81,6 +81,8 @@ class SettingsDialog(QDialog):
         self._injection_target = None
         self._build_ui()
         self._load_values()
+        # PortAudio init/terminate is not thread-safe: no mic test while the device scan runs.
+        self.test_mic_btn.setEnabled(False)
         threading.Thread(target=self._load_devices_worker, daemon=True).start()
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -619,7 +621,10 @@ class SettingsDialog(QDialog):
         self.save_btn.setStyleSheet("")
 
     def _load_devices_worker(self):
-        devices = get_input_devices()
+        try:
+            devices = get_input_devices()
+        except Exception:
+            devices = []  # Still unlock the mic test button.
         try:
             self.devices_ready.emit(devices)
         except RuntimeError:
@@ -636,6 +641,7 @@ class SettingsDialog(QDialog):
             self.mic_combo.addItem("Seçili mikrofon (bağlı değil)", selected)
             index = self.mic_combo.count() - 1
         self.mic_combo.setCurrentIndex(max(0, index))
+        self.test_mic_btn.setEnabled(True)
 
     def _test_microphone(self) -> None:
         if not self.can_edit():

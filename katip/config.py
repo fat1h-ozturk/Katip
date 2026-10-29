@@ -31,6 +31,12 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 SECRET_KEYS = ("gemini_api_key", "groq_api_key", "openai_api_key", "anthropic_api_key")
+VAULT_UNAVAILABLE = "İşletim sistemi anahtar kasası kullanılamıyor; yeni anahtar kaydedilmedi. Kasayı açıp tekrar deneyin."
+VAULT_ENTRY_MISSING = "Anahtar kasasındaki kayıt bulunamadı; ilgili API anahtarını yeniden girin."
+
+
+class SettingsError(RuntimeError):
+    """A save failure whose message is safe and actionable for the user."""
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "schema_version": 1,
@@ -136,6 +142,9 @@ class ConfigManager:
         self.secret_error = ""
         self._read_only = False
         self._extra = {}
+        # Secret values exactly as config.json held them, and as last loaded into memory.
+        self._plain: Dict[str, str] = {}
+        self._baseline: Dict[str, str] = {}
         self.data = deepcopy(DEFAULT_CONFIG)
         self.load()
 
@@ -168,6 +177,8 @@ class ConfigManager:
                     for key, value in saved.items():
                         try:
                             self.data.update(validate_config({key: value}))
+                            if key in SECRET_KEYS:
+                                self._plain[key] = value
                         except ValueError:
                             print(f"[Config] Invalid setting ignored: {key}")
             except Exception as e:
@@ -175,13 +186,11 @@ class ConfigManager:
 
         if self.secret_store:
             for key, reference in self.data["secret_refs"].items():
-                try:
-                    value = self.secret_store.get(reference)
-                    if value is None:
-                        raise RuntimeError("Anahtar kasasındaki kayıt bulunamadı.")
+                value, error = self._read_secret(reference)
+                if value is not None:
                     self.data[key] = value
-                except RuntimeError as error:
-                    self.secret_error = str(error)
+                else:
+                    self.secret_error = error
 
         # Check environment fallback for API keys if empty
         if not self.data.get("gemini_api_key") and os.environ.get("GEMINI_API_KEY"):
@@ -192,6 +201,15 @@ class ConfigManager:
             self.data["openai_api_key"] = os.environ["OPENAI_API_KEY"]
         if not self.data.get("anthropic_api_key") and os.environ.get("ANTHROPIC_API_KEY"):
             self.data["anthropic_api_key"] = os.environ["ANTHROPIC_API_KEY"]
+        self._baseline = {key: self.data[key] for key in SECRET_KEYS}
+
+    def _read_secret(self, reference):
+        """Return (value, error); a locked vault or missing entry never raises."""
+        try:
+            value = self.secret_store.get(reference)
+        except Exception:
+            return None, "Anahtar kasası okunamadı; önceki anahtar kaydı korundu."
+        return (value, "") if value is not None else (None, VAULT_ENTRY_MISSING)
 
     def save(self) -> None:
         """Atomically replace the file; never truncate the last valid settings."""
@@ -201,27 +219,56 @@ class ConfigManager:
             raise RuntimeError("Daha yeni ayar şeması üzerine yazılamaz; önceki dosya korundu.")
         persisted = {**self._extra, **validate_config(self.data)}
         refs = dict(persisted["secret_refs"])
+        refreshed = {}
+        errors = []
         try:
             if self.secret_store:
+                usable = True
                 for key in SECRET_KEYS:
                     value = self.data[key]
                     reference = refs.get(key)
-                    if not value and reference:
-                        # A locked/unavailable vault must not erase an existing reference.
-                        if self.secret_error:
-                            raise RuntimeError(self.secret_error)
+                    plain = self._plain.get(key, "")
+                    persisted[key] = ""
+                    # Whitespace-only differences are the form stripping a pasted key, not an edit.
+                    if value.strip() != self._baseline.get(key, "").strip():
                         refs.pop(key, None)
-                    elif value:
-                        if not reference or self.secret_store.get(reference) != value:
+                        if value:
+                            if not usable:
+                                raise SettingsError(VAULT_UNAVAILABLE)
                             reference = uuid4().hex
                             created_refs.append(reference)
-                            self.secret_store.put(reference, value)
+                            try:
+                                self.secret_store.put(reference, value)
+                            except Exception:
+                                raise SettingsError(VAULT_UNAVAILABLE) from None
                             refs[key] = reference
-                    persisted[key] = ""
+                        continue
+                    if reference:
+                        # Re-read instead of trusting the startup error; keep the ref either way.
+                        current, error = self._read_secret(reference)
+                        if current is not None:
+                            refreshed[key] = current
+                        else:
+                            errors.append(error)
+                            usable = usable and error == VAULT_ENTRY_MISSING
+                            persisted[key] = plain
+                    elif value and usable:
+                        # Opportunistic migration of a legacy plaintext or environment key.
+                        reference = uuid4().hex
+                        try:
+                            self.secret_store.put(reference, value)
+                            created_refs.append(reference)
+                            refs[key] = reference
+                        except Exception:
+                            usable = False
+                            errors.append(VAULT_UNAVAILABLE)
+                            persisted[key] = plain
+                    else:
+                        persisted[key] = plain
                 persisted["secret_refs"] = refs
                 history = set(self.data["secret_history"]) | set(self.data["secret_refs"].values()) | set(refs.values())
                 if len(history) > 1000:
-                    raise RuntimeError("Anahtar geçmişi sınırı aşıldı; önceki kayıtlar korundu.")
+                    raise SettingsError("Anahtar geçmişi sınırı aşıldı; önceki kayıtlar korundu.")
                 persisted["secret_history"] = sorted(history)
             if self.config_file.exists() and not (self.config_file.parent / "config.previous.json").exists():
                 # Preserve one rollback copy with user-only permissions.
@@ -239,13 +286,20 @@ class ConfigManager:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temporary_path, self.config_file)
-            self.data["secret_refs"] = refs
-            self.data["secret_history"] = persisted["secret_history"]
+            if self.secret_store:
+                self.data.update(refreshed)
+                self.data["secret_refs"] = refs
+                self.data["secret_history"] = persisted["secret_history"]
+                self._plain = {key: persisted[key] for key in SECRET_KEYS}
+                self._baseline = {key: self.data[key] for key in SECRET_KEYS}
+                self.secret_error = errors[0] if errors else ""
         except Exception as e:
             if self.secret_store:
                 for reference in created_refs:
                     with suppress(Exception):
                         self.secret_store.delete(reference)
+            if isinstance(e, SettingsError):
+                raise
             raise RuntimeError("Ayarlar kaydedilemedi; önceki ayar dosyası korundu.") from e
         finally:
             if temporary_path is not None:
