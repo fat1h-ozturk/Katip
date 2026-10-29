@@ -13,7 +13,15 @@ import sys
 import tempfile
 from pathlib import Path
 from .runtime import profile
+from .infrastructure.process_runner import clean_environment
 from typing import Optional
+
+
+def _system_run(*args, **kwargs):
+    # Desktop tools (kbuildsycoca6 is itself a Qt program) must not load the bundled Qt libraries.
+    kwargs.setdefault("env", clean_environment())
+    kwargs.setdefault("timeout", 30)
+    return subprocess.run(*args, **kwargs)
 
 def get_project_root() -> Path:
     """Returns the absolute root directory of the katip project."""
@@ -83,7 +91,7 @@ def _install_linux_icons() -> None:
     # Refresh icon cache if gtk-update-icon-cache is present
     if shutil.which("gtk-update-icon-cache"):
         try:
-            subprocess.run(
+            _system_run(
                 ["gtk-update-icon-cache", "-q", "-t", "-f", str(hicolor_dir)],
                 capture_output=True,
                 check=False
@@ -112,7 +120,7 @@ def _refresh_linux_desktop_database() -> None:
 
     if shutil.which("update-desktop-database"):
         try:
-            subprocess.run(["update-desktop-database", str(apps_dir)], capture_output=True, check=False, timeout=3)
+            _system_run(["update-desktop-database", str(apps_dir)], capture_output=True, check=False, timeout=3)
         except Exception:
             pass
 
@@ -120,7 +128,7 @@ def _refresh_linux_desktop_database() -> None:
     for kbuild in ("kbuildsycoca6", "kbuildsycoca5"):
         if shutil.which(kbuild):
             try:
-                subprocess.run([kbuild], capture_output=True, check=False, timeout=3)
+                _system_run([kbuild], capture_output=True, check=False, timeout=3)
                 break
             except Exception:
                 pass
@@ -305,7 +313,7 @@ def _create_windows_shortcut(
     ps_lines.append("$s.Save()")
     ps_command = " ".join(ps_lines)
     try:
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_command], capture_output=True)
+        res = _system_run(["powershell", "-NoProfile", "-Command", ps_command], capture_output=True)
         return res.returncode == 0
     except Exception:
         return False
@@ -350,7 +358,7 @@ def _install_mac_app() -> bool:
             source_file = temp_root / "Katip.applescript"
             built_app = temp_root / "Katip.app"
             source_file.write_text(applescript_source, encoding="utf-8")
-            result = subprocess.run(
+            result = _system_run(
                 ["/usr/bin/osacompile", "-o", str(built_app), str(source_file)],
                 capture_output=True,
                 text=True,
@@ -383,7 +391,7 @@ def _install_mac_app() -> bool:
             icon_target = built_app / "Contents" / "Resources" / "Katip.icns"
             if not icon_source.exists():
                 raise FileNotFoundError(f"macOS app icon not found: {icon_source}")
-            icon_result = subprocess.run(
+            icon_result = _system_run(
                 ["/usr/bin/sips", "-s", "format", "icns", str(icon_source), "--out", str(icon_target)],
                 capture_output=True,
                 text=True,
