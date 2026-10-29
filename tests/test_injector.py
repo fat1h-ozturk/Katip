@@ -41,10 +41,36 @@ def test_restore_setting_reaches_backend(monkeypatch):
 
 def test_failed_paste_keeps_generated_text(monkeypatch):
     monkeypatch.setattr("katip.injector.time.sleep", lambda _: None)
-    backend = FakeInjector(restore_clipboard=True, paste=False)
+    backend = FakeInjector(restore_clipboard=False, paste=False)
     assert backend.inject_text("generated") is False
     assert backend.clipboard == "generated"
     assert "panoda" in backend.last_error
+
+
+def test_failed_paste_with_restore_gives_the_user_their_clipboard_back(monkeypatch):
+    monkeypatch.setattr("katip.injector.time.sleep", lambda _: None)
+    backend = FakeInjector(restore_clipboard=True, paste=False)
+    assert backend.inject_text("generated") is False
+    assert backend.clipboard == "previous" and "geri yüklendi" in backend.last_error
+
+
+def test_restore_warning_reaches_the_app_through_the_proxy(monkeypatch):
+    monkeypatch.setattr("katip.injector.time.sleep", lambda _: None)
+    injector = TextInjector()
+    backend = FakeInjector(restore_clipboard=True)
+    backend._restore = lambda *_: False
+    injector._backend = backend
+    assert injector.inject_text("generated") is True
+    assert "geri yüklenemedi" in injector.last_warning
+
+
+def test_permission_is_acquired_before_the_final_target_check(monkeypatch):
+    monkeypatch.setattr("katip.injector.time.sleep", lambda _: None)
+    order = []
+    backend = FakeInjector()
+    backend.prepare_paste = lambda: order.append("prepare")
+    backend.inject_text("generated", before_paste=lambda: order.append("check"))
+    assert order == ["check", "prepare", "check"]
 
 
 def test_unrestorable_clipboard_is_left_untouched():

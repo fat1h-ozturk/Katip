@@ -440,3 +440,22 @@ def test_level_meter_treats_one_bit_dither_as_silence():
             recorder.stop_recording()
         assert levels and max(levels) < .01
         recorder.terminate()
+
+
+def test_portaudio_start_failure_is_retried_once_then_reported():
+    errors = []
+    recorder = AudioRecorder(on_error_callback=errors.append)
+    with patch('katip.audio.pyaudio.PyAudio', side_effect=OSError('PRIVATE')) as pa:
+        recorder.start_recording()
+        recorder._thread.join(3)
+    assert pa.call_count == 2 and len(errors) == 1 and errors[0].startswith('[CAPTURE_OPEN_FAILED]')
+    notices = []
+    recorder = AudioRecorder(device_index=4, device_name='Gone', on_notice_callback=notices.append)
+    stale = fake_portaudio(['Built-in'], open_error=OSError(-9996, 'x'))
+    fresh = fake_portaudio(['Built-in'], one_second_stream(recorder))
+    with patch('katip.audio.pyaudio.PyAudio', side_effect=[stale, fresh]):
+        recorder.start_recording()
+        recorder._thread.join(3)
+    assert len(notices) == 1
+    recorder.discard_audio()
+    recorder.terminate()

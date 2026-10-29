@@ -10,10 +10,11 @@ Kabul çıtası: **uygulama çökmez, ses güvenilir biçimde alınır, metin g�
 
 | Kontrol | Sonuç |
 |---|---|
-| Test paketi (Linux, Python 3.11.17, kilitli ortam `uv sync --locked`) | 375 geçti, 12 atlandı (atlananlar isteğe bağlı performans testleri) |
-| Aynı paket Python 3.10 ve 3.14 | Ayrı kilitli ortamlarda 3.10.22 ve 3.14.8: her birinde 375 geçti, 12 atlandı |
+| Test paketi (Linux, Python 3.11.17, kilitli ortam `uv sync --locked`) | 386 geçti, 12 atlandı (atlananlar isteğe bağlı performans testleri) |
+| Aynı paket Python 3.10 ve 3.14 | Ayrı kilitli ortamlarda 3.10.22 ve 3.14.8: her birinde 386 geçti, 12 atlandı |
 | `ruff check katip`, `mypy` (çekirdek kapsam) | Temiz |
-| CI kapsama kapısı (oturum, teşhis, HTTP modülleri ≥%90 satır ve dal) | Geçti: oturum %100 satır / %92,9 dal, teşhis %100 / %100, HTTP %98,4 / %97,4. Tüm paket: %71,3 satır, %54,1 dal (diğer modüller yalnız raporlanır) |
+| CI kapsama kapısı (oturum, teşhis, HTTP modülleri ≥%90 satır ve dal) | Geçti: oturum %100 satır / %92,9 dal, teşhis %100 / %100, HTTP %98,4 / %97,4. Tüm paket: %71,7 satır, %54,7 dal (diğer modüller yalnız raporlanır) |
+| PyInstaller paketi (Linux, `katip.spec`) | Derlendi; `--version` çalıştı; RemoteDesktop ve dbus-next modülleri pakette. Paketle gerçek masaüstü testi yapılmadı. |
 | `uv lock --check` | Kilit `pyproject.toml` ile tutarlı |
 | İsteğe bağlı performans paketi (`KATIP_RUN_PERFORMANCE=1`) | 12/12 geçti: 40–600 sn × 16/44,1/48 kHz, en kötü GUI p95 25,4 ms, p99 28,1 ms, ek RSS ≤57,5 MiB, 600 sn DSP ≈4,1 sn (sentetik PCM; gerçek konuşma/paket ölçümü değil) — [ayrıntılar](validation/2026-10-29-performance.json) |
 
@@ -129,7 +130,8 @@ Her satırı ilgili makinede, bu daldan derlenmiş sürümle deneyin ve sonucu n
 ## Bilinen sınırlar ve açık noktalar
 
 - **U01 kapanmadı**; yukarıdaki kayıtla tekrarında aşama belirlenecek.
-- Wayland'da hedef pencere doğrulanamaz; odaktaki pencereye yapıştırılır.
+- Wayland'da hedef pencere doğrulanamaz; odaktaki pencereye yapıştırılır. RemoteDesktop izni ilk yapıştırmada istenir ve izin penceresi açıkken (en fazla ~65 sn) sıradaki dikte bekler; izin verilince hedef ve iptal yeniden denetlenir, sonra tuşlar gönderilir.
+- Kısayol portalı oturum ortasında kaybolursa (portal yeniden başlatıldı) evdev'e geçilir, portal yeniden denenmez; evdev izni yoksa kısayol uygulama yeniden başlatılana kadar `katip --toggle` ile çalışır.
 - Windows Job Object, CLI süreci başladıktan sonra atanır; çok hızlı başlayan bir torun süreç dışarıda kalabilir veya hemen biten bir CLI yanıltıcı `PROCESS_ISOLATION` hatası verebilir. Windows'ta doğrulanmadı.
 - Gemini, bazı modellerde düşünme jetonları çıktı sınırını tüketirse yanıtı eksik sayıp reddedebilir (teslim edilmez, kayıt korunur). Gemini düz metin çıktısı eskisi gibi temizlenmiyor (B12 gereği içerik silen temizleyici kaldırıldı).
 - Antigravity promptu hâlâ komut satırı argümanıyla gider (mevcut CLI protokolü).

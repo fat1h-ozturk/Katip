@@ -80,6 +80,7 @@ class SettingsDialog(QDialog):
         self._injection_running = False
         self._injection_target = None
         self._devices_loaded = False
+        self._missing_row = -1
         self._build_ui()
         self._load_values()
         # PortAudio init/terminate is not thread-safe: no mic test while the device scan runs.
@@ -636,21 +637,27 @@ class SettingsDialog(QDialog):
     def _selected_device_name(self) -> str:
         if self.mic_combo.currentData() == -1:
             return ""
-        if self.mic_combo.currentData() == self.config.get("input_device_index", -1) and not self._devices_loaded:
-            return self.config.get("input_device_name", "")  # Placeholder row until the scan finishes.
+        if not self._devices_loaded or self.mic_combo.currentIndex() == self._missing_row:
+            return self.config.get("input_device_name", "")  # Placeholder rows are not device names.
         return self.mic_combo.currentText()
 
     def _populate_devices(self, devices):
         self._devices_loaded = True
+        self._missing_row = -1
         selected = self.mic_combo.currentData()
         self.mic_combo.clear()
         self.mic_combo.addItem("Varsayılan Sistem Mikrofonu", -1)
         for dev in devices:
             self.mic_combo.addItem(dev["name"], dev["index"])
-        index = self.mic_combo.findData(selected)
+        # Hot-plug shifts indexes; the saved name identifies the device, the index only breaks ties.
+        name = self.config.get("input_device_name", "")
+        index = self.mic_combo.findText(name) if name and selected == self.config.get("input_device_index", -1) else -1
+        if index < 0:
+            index = self.mic_combo.findData(selected) if not name else -1
         if index < 0 and selected is not None and selected >= 0:
             self.mic_combo.addItem("Seçili mikrofon (bağlı değil)", selected)
             index = self.mic_combo.count() - 1
+            self._missing_row = index
         self.mic_combo.setCurrentIndex(max(0, index))
         self.test_mic_btn.setEnabled(True)
 

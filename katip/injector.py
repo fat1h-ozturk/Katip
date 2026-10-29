@@ -79,6 +79,9 @@ class BaseInjector(abc.ABC):
     def clipboard_revision(self):
         return None
 
+    def prepare_paste(self) -> None:
+        """Acquire input permission that may need a dialog, before the final target check."""
+
     def inject_text(self, text: str, before_paste=None) -> bool:
         """
         Main injection routine:
@@ -117,6 +120,7 @@ class BaseInjector(abc.ABC):
 
         # Brief delay so active app sees updated clipboard
         time.sleep(0.06)
+        self.prepare_paste()
 
         if before_paste:
             try:
@@ -129,7 +133,10 @@ class BaseInjector(abc.ABC):
         pasted = self.simulate_paste()
 
         if not pasted:
-            self.last_error = "Otomatik yapıştırma başarısız; metin panoda tutuldu."
+            if old_clipboard is not None and self._restore(old_clipboard, text, written_revision):
+                self.last_error = "Otomatik yapıştırma başarısız; önceki pano geri yüklendi."
+            else:
+                self.last_error = "Otomatik yapıştırma başarısız; metin panoda tutuldu."
             return False
 
         if self.restore_clipboard and old_clipboard is not None:
@@ -215,8 +222,19 @@ class LinuxInjector(BaseInjector):
 
         return False
 
+    @staticmethod
+    def _wayland() -> bool:
+        return os.environ.get("XDG_SESSION_TYPE") == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
+
+    def prepare_paste(self) -> None:
+        # KDE/GNOME have no virtual-keyboard protocol, so wtype cannot help there either.
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+        if (self._wayland() and not (self.has_ydotool and _ydotool_socket_available())
+                and (not self.has_wtype or "KDE" in desktop or "GNOME" in desktop)):
+            _portal_keyboard().ensure_session()
+
     def simulate_paste(self) -> bool:
-        wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
+        wayland = self._wayland()
         if not wayland and self._xdotool_paste():
             return True
         # Without its daemon, ydotool cannot send anything; do not count it as a paste path.
@@ -550,6 +568,10 @@ class TextInjector:
     @property
     def last_error(self) -> str:
         return self._backend.last_error
+
+    @property
+    def last_warning(self) -> str:
+        return self._backend.last_warning
 
     def get_current_clipboard(self) -> Optional[str]:
         return self._backend.get_current_clipboard()

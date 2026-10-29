@@ -234,3 +234,47 @@ def test_portal_paste_runs_on_its_own_loop_and_times_out(tmp_path):
         return keys == [29, 42, 47]
     keyboard._paste = ok
     assert keyboard.paste(terminal=True, timeout=1)
+
+
+@pytest.mark.parametrize('desktop, tools, socket, expected', [
+    ('KDE', {'wtype'}, False, True), ('GNOME', set(), False, True),
+    ('sway', {'wtype'}, False, False), ('KDE', {'ydotool'}, True, False)])
+def test_portal_permission_is_requested_before_the_target_check(monkeypatch, desktop, tools, socket, expected):
+    backend, _, portal = linux(monkeypatch, 'wayland', tools, socket=socket)
+    monkeypatch.setenv('XDG_CURRENT_DESKTOP', desktop)
+    backend.prepare_paste()
+    assert portal.ensure_session.called is expected
+
+
+def test_cancelled_portal_paste_releases_pressed_keys(monkeypatch, tmp_path):
+    from dbus_next import Variant
+    from katip.platform.remote_desktop import RemoteDesktopKeyboard
+    keyboard = RemoteDesktopKeyboard(tmp_path / 'token', permission_timeout=.2)
+    bus = PortalBus(grant(Variant))
+    keyboard.bus, keyboard.session = bus, '/session/1'
+    bus.add_message_handler(keyboard._message)
+    async def scenario():
+        real_sleep = asyncio.sleep
+        async def stall(_delay):
+            await real_sleep(10)
+        monkeypatch.setattr('katip.platform.remote_desktop.asyncio.sleep', stall)
+        task = asyncio.ensure_future(keyboard._paste([29, 47]))
+        await real_sleep(.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    asyncio.run(scenario())
+    keys = [(m.body[2], m.body[3]) for m in bus.calls if m.member == 'NotifyKeyboardKeycode']
+    assert keys == [(29, 1), (47, 1), (47, 0), (29, 0)] and keyboard.session is None
+
+
+def test_ensure_session_reuses_a_live_session(tmp_path):
+    from katip.platform.remote_desktop import RemoteDesktopKeyboard
+    keyboard = RemoteDesktopKeyboard(tmp_path / 'token')
+    keyboard.session = '/session/1'
+    assert keyboard.ensure_session(timeout=1)
+    async def broken():
+        raise RuntimeError('portal gone')
+    keyboard.session = None
+    keyboard._start_session = broken
+    assert keyboard.ensure_session(timeout=1) is False

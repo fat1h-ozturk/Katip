@@ -102,3 +102,19 @@ def test_selected_microphone_is_saved_with_its_name(dialog):
     assert dialog.config.get("input_device_name") == "USB Headset 2"
     dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(-1))
     assert dialog._selected_device_name() == ""
+
+
+def test_hot_plug_shifted_index_selects_the_saved_name_not_the_index(dialog):
+    dialog.config.update({"input_device_index": 2, "input_device_name": "USB Headset"})
+    dialog.mic_combo.addItem("Seçili mikrofon (aygıtlar yükleniyor)", 2)
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(2))
+    dialog._populate_devices([{"index": 2, "name": "Webcam"}, {"index": 5, "name": "USB Headset"}])
+    assert dialog.mic_combo.currentText() == "USB Headset" and dialog.mic_combo.currentData() == 5
+    # A missing device keeps its saved name instead of the placeholder label.
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(-1))
+    dialog.config.update({"input_device_index": 7, "input_device_name": "Gone"})
+    dialog.mic_combo.addItem("x", 7)
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(7))
+    dialog._populate_devices([{"index": 2, "name": "Webcam"}])
+    assert dialog.mic_combo.currentText() == "Seçili mikrofon (bağlı değil)"
+    assert dialog._selected_device_name() == "Gone"

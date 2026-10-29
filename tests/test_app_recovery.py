@@ -85,6 +85,9 @@ def test_unverifiable_target_is_pasted_into_the_focused_window(tmp_path):
     app._process_audio_worker(app.pending_audio)
     drain(app)
     app.injector.inject_text.assert_called_once()
+    args, kwargs = app.injector.inject_text.call_args
+    assert args == ('Complete text',) and callable(kwargs['before_paste'])
+    kwargs['before_paste']()  # No known target to compare, so only cancellation can stop it.
     assert app.session.state == State.COMPLETED and not app.pending_audio
     app.pill.show_success.assert_called_once()
     assert app.diagnostics.snapshot()[-1]['code'] == 'INPUT_SENT'

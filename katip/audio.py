@@ -26,6 +26,8 @@ except ImportError:
 
 # ASVS 15.4.1: ALSA owns one process-global error callback.
 _ALSA_LOCK = threading.RLock()
+# Pa_Initialize/Pa_Terminate keep a process-wide reference count that is not thread-safe.
+_PORTAUDIO_LOCK = threading.RLock()
 
 
 # Suppress ALSA C-level error spam on Linux only
@@ -57,7 +59,8 @@ def get_input_devices() -> list:
     pa = None
     try:
         with no_alsa_err():
-            pa = pyaudio.PyAudio()
+            with _PORTAUDIO_LOCK:
+                pa = pyaudio.PyAudio()
             default_index = -1
             try:
                 def_info = pa.get_default_input_device_info()
@@ -81,7 +84,7 @@ def get_input_devices() -> list:
         pass
     finally:
         if pa is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception), _PORTAUDIO_LOCK:
                 pa.terminate()
     return devices
 
@@ -129,7 +132,7 @@ class AudioRecorder:
         """Ensures PyAudio instance is warm and ready without device re-probing."""
         if self._pyaudio is None:
             try:
-                with no_alsa_err():
+                with no_alsa_err(), _PORTAUDIO_LOCK:
                     self._pyaudio = pyaudio.PyAudio()
             except Exception:
                 self.diagnostics.event("failed", stage="capture", code="CAPTURE_INITIALIZATION")
@@ -303,7 +306,7 @@ class AudioRecorder:
             if error and self.on_error_callback:
                 self.on_error_callback(error)
 
-    def _resolve_device(self, pa):
+    def _resolve_device(self, pa, notify=True):
         """The saved index can point to another device after hot-plug; the name decides."""
         if self.device_index is None or self.device_index < 0:
             return None
@@ -323,7 +326,7 @@ class AudioRecorder:
                     self.diagnostics.event("device_resolved", stage="capture", code="DEVICE_MOVED")
                     return index
         self.diagnostics.event("device_resolved", stage="capture", code="DEVICE_NOT_FOUND")
-        if self.on_notice_callback:
+        if notify and self.on_notice_callback:
             self.on_notice_callback("Seçili mikrofon bulunamadı; varsayılan sistem mikrofonu kullanılıyor.")
         return None
 
@@ -333,11 +336,15 @@ class AudioRecorder:
             "input": True, "frames_per_buffer": self.CHUNK_SIZE,
         }
         # A second attempt re-initializes PortAudio, which picks up re-plugged or resumed devices.
+        failure = None
         for attempt in range(2):
             pa = self._ensure_pyaudio()
             if pa is None:
-                raise CaptureError("Mikrofon başlatılamadı.")
-            index = self._resolve_device(pa)
+                if attempt == 1:
+                    raise CaptureError("[CAPTURE_OPEN_FAILED] Ses sistemi (PortAudio) başlatılamadı. Ses aygıtlarını "
+                                       "ve mikrofon iznini kontrol edin.")
+                continue
+            index = self._resolve_device(pa, notify=attempt == 0)
             if index is None:
                 stream_kwargs.pop("input_device_index", None)
             else:
@@ -367,7 +374,8 @@ class AudioRecorder:
             pa, self._pyaudio = self._pyaudio, None
         if pa is not None:
             try:
-                pa.terminate()
+                with _PORTAUDIO_LOCK:
+                    pa.terminate()
             except Exception:
                 pass
 

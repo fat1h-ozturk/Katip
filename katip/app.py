@@ -64,11 +64,6 @@ class KatipApp:
         from . import __version__
         log_directory = self.config.config_file.parent
         self.diagnostics = Diagnostics(logger=diagnostic_logger(log_directory))
-        self.app_diagnostics = record_app_start(log_directory, self.diagnostics._logger, __version__)
-        install_crash_reporting(log_directory, self.app_diagnostics)
-        self._app_stopped = False
-        # A desktop logout ends the event loop without the tray's quit action.
-        q_app.aboutToQuit.connect(self._record_app_stopped)
         self._capture_job_id = None
         self._target = None
         self.pending_audio = b""
@@ -141,6 +136,12 @@ class KatipApp:
             self.pill.close()
             self.tray.hide()
             raise RuntimeError("Kâtip zaten çalışıyor veya uygulama iletişim kanalı açılamadı.")
+        # Only the instance that owns the IPC channel marks a run; a refused second start is not a crash.
+        self.app_diagnostics = record_app_start(log_directory, self.diagnostics._logger, __version__)
+        install_crash_reporting(log_directory, self.app_diagnostics)
+        self._app_stopped = False
+        # A desktop logout ends the event loop without the tray's quit action.
+        q_app.aboutToQuit.connect(self._record_app_stopped)
 
         # Lazy-initialized AI service singletons (avoids re-creating per request)
         self._gemini_service: Optional[GeminiService] = None

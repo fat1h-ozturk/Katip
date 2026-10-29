@@ -30,15 +30,28 @@ class RemoteDesktopKeyboard:
         self._loop = None
         self._lock = threading.Lock()
 
+    def ensure_session(self, timeout=None) -> bool:
+        """Start (or reuse) the session; the first call may wait for the permission dialog."""
+        return self._run(self._ensure(), timeout or self.permission_timeout + 5)
+
     def paste(self, terminal=False, timeout=None) -> bool:
         """Send Ctrl+V (or Ctrl+Shift+V); False when the portal is unavailable or refused."""
-        loop = self._ensure_loop()
         keys = [KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_V] if terminal else [KEY_LEFTCTRL, KEY_V]
-        future = asyncio.run_coroutine_threadsafe(self._paste(keys), loop)
+        return self._run(self._paste(keys), timeout or self.permission_timeout + 5)
+
+    def _run(self, coroutine, timeout):
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._ensure_loop())
         try:
-            return future.result(timeout or self.permission_timeout + 5)
+            return future.result(timeout)
         except Exception:
             future.cancel()
+            return False
+
+    async def _ensure(self):
+        try:
+            return bool(self.session) or await self._start_session()
+        except Exception:
+            self.session = None
             return False
 
     def _ensure_loop(self):
@@ -77,11 +90,13 @@ class RemoteDesktopKeyboard:
         try:
             await self._call(self.ROOT, self.INTERFACE, member, signature, body + [options])
             return await asyncio.wait_for(future, timeout)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError) as error:
             try:
                 await self._call(path, "org.freedesktop.portal.Request", "Close")
-            except Exception:
+            except BaseException:
                 pass
+            if isinstance(error, asyncio.CancelledError):
+                raise
             return [2, {}]
         finally:
             self.pending.pop(path, None)
@@ -137,18 +152,29 @@ class RemoteDesktopKeyboard:
                 if reused:
                     continue
                 return False
+            pressed = [keys[0]]
             try:
                 for key in keys[1:]:
                     await self._call(self.ROOT, self.INTERFACE, "NotifyKeyboardKeycode", "oa{sv}iu",
                                      [self.session, {}, key, 1])
+                    pressed.append(key)
                 await asyncio.sleep(.02)
-                for key in reversed(keys):
+                while pressed:
                     await self._call(self.ROOT, self.INTERFACE, "NotifyKeyboardKeycode", "oa{sv}iu",
-                                     [self.session, {}, key, 0])
+                                     [self.session, {}, pressed[-1], 0])
+                    pressed.pop()
                 return True
-            except Exception:
-                # Keys may already be down in the target; never repeat a partial paste.
-                self.session = None
+            except BaseException as error:
+                # Never leave Ctrl held in the desktop, and never repeat a partial paste.
+                session, self.session = self.session, None
+                for key in reversed(pressed):
+                    try:
+                        await self._call(self.ROOT, self.INTERFACE, "NotifyKeyboardKeycode", "oa{sv}iu",
+                                         [session, {}, key, 0])
+                    except BaseException:
+                        pass
+                if isinstance(error, asyncio.CancelledError):
+                    raise
                 return False
         return False
 
