@@ -7,6 +7,14 @@ from ctypes.util import find_library
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
 
+def _has_gi():
+    # Frozen builds ship without PyGObject; any lookup failure means the Qt pill.
+    try:
+        return importlib.util.find_spec('gi') is not None
+    except (ImportError, ValueError):
+        return False
+
+
 class LayerOverlayController(QObject):
     def __init__(self, fallback):
         super().__init__()
@@ -16,6 +24,7 @@ class LayerOverlayController(QObject):
         self.process = None
         self._closing = False
         self._ready = False
+        self._dead = False
         self._last = None
         self._stdout = bytearray()
         self._timer = QTimer(self)
@@ -23,7 +32,7 @@ class LayerOverlayController(QObject):
         self._timer.timeout.connect(self._failed)
         if (os.environ.get('XDG_SESSION_TYPE') == 'wayland'
                 and os.environ.get('QT_QPA_PLATFORM') != 'offscreen'
-                and find_library('gtk4-layer-shell') and importlib.util.find_spec('gi')):
+                and find_library('gtk4-layer-shell') and _has_gi()):
             self._start_overlay()
 
     def _start_overlay(self):
@@ -45,7 +54,7 @@ class LayerOverlayController(QObject):
         self._timer.start(1500)
 
     def _read_ready(self):
-        if not self.process:
+        if not self.process or self._dead:
             return
         self._stdout.extend(bytes(self.process.readAllStandardOutput()))
         if len(self._stdout) > 1024:
@@ -61,6 +70,7 @@ class LayerOverlayController(QObject):
         if self._closing:
             return
         self._ready = False
+        self._dead = True
         self._timer.stop()
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.kill()
@@ -70,25 +80,42 @@ class LayerOverlayController(QObject):
 
     def _send_cmd(self, command):
         self._last = command
-        if self._ready and self.process and self.process.state() == QProcess.ProcessState.Running:
-            if self.process.write((command + '\n').encode('utf-8')) >= 0:
-                self.fallback.hide()
+        if not self._ready:
+            return
+        if (self.process and self.process.state() == QProcess.ProcessState.Running
+                and self.process.write((command + '\n').encode('utf-8')) >= 0):
+            self.fallback.hide()
+        else:
+            self._failed()
+
+    def _update_fallback(self, method, *args):
+        if self.process is None or self._dead:
+            method(*args)
+            return
+        # The helper owns (or may soon own) the indicator: keep the Qt pill's state
+        # current for a later fallback, but never map a focus-taking toplevel.
+        show = self.fallback._show_overlay
+        self.fallback._show_overlay = lambda: None
+        try:
+            method(*args)
+        finally:
+            self.fallback._show_overlay = show
 
     def show_recording(self, mode):
         self.current_mode = mode
-        self.fallback.show_recording(mode)
+        self._update_fallback(self.fallback.show_recording, mode)
         self._send_cmd(f'RECORDING {mode}')
 
     def show_processing(self):
-        self.fallback.show_processing()
+        self._update_fallback(self.fallback.show_processing)
         self._send_cmd('PROCESSING')
 
     def show_success(self, latency=0.0):
-        self.fallback.show_success(latency)
+        self._update_fallback(self.fallback.show_success, latency)
         self._send_cmd(f'SUCCESS {latency}')
 
     def show_error(self, message):
-        self.fallback.show_error(message)
+        self._update_fallback(self.fallback.show_error, message)
         self._send_cmd('ERROR ' + ' '.join(message.splitlines())[:300])
 
     def hide_pill(self):

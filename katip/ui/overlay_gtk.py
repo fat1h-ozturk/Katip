@@ -64,8 +64,17 @@ class LayerOverlayApp:
         self.app = Gtk.Application(application_id="com.talktowrite." + app_id().replace("-", "_") + ".layeroverlay")
         self.app.connect("activate", self.on_activate)
         self.hide_timer_id = 0
+        self.exit_code = 0
 
     def on_activate(self, app):
+        # Without the protocol (e.g. GNOME) the window would be an ordinary, focus-taking
+        # toplevel; exit before READY so the controller keeps the Qt pill instead.
+        supported = getattr(Gtk4LayerShell, "is_supported", None)
+        if not supported or not supported():
+            print("layer-shell unsupported", file=sys.stderr, flush=True)
+            self.exit_code = 3
+            app.quit()
+            return
         self.win = Gtk.ApplicationWindow(application=app)
 
         # Initialize as Wayland Layer Shell surface
@@ -182,7 +191,9 @@ class LayerOverlayApp:
         return False
 
     def run(self):
-        self.app.run([])
+        status = self.app.run([])
+        if self.exit_code or status:
+            raise SystemExit(self.exit_code or status)
 
 if __name__ == "__main__":
     app = LayerOverlayApp()

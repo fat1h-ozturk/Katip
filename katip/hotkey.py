@@ -641,26 +641,66 @@ class HotkeyManager:
             self.hotkey_status = "ipc_only"
             return
         if os.environ.get("XDG_SESSION_TYPE") == "wayland":
-            try:
-                import asyncio
-                from .platform.shortcuts import ShortcutPortal, PortalUnavailable
-                def press():
-                    callback = self.on_press if self.trigger_mode == "push_to_talk" else self.on_toggle
-                    if callback:
-                        callback()
-                def release():
-                    if self.trigger_mode == "push_to_talk" and self.on_release:
-                        self.on_release()
-                portal = ShortcutPortal(self.hotkey_str, press, release, self._stop_event,
-                                        lambda status: setattr(self, "hotkey_status", status))
-                asyncio.run(portal.run())
+            if self._run_portal_listener():
                 return  # Permission denial does not fall through to raw-device access.
-            except (ImportError, PortalUnavailable):
-                pass
+            if self._stop_event.is_set():
+                return
         if HAS_EVDEV and self.is_running:
-            self._run_evdev_listener()
+            self._run_evdev_guarded()
         else:
             self.hotkey_status = "ipc_only"
+
+    def _run_portal_listener(self) -> bool:
+        """True when the portal settled the session (denied or stopped); False means fall back."""
+        held = []
+        try:
+            import asyncio
+            from .platform.shortcuts import ShortcutPortal, PortalLost
+        except ImportError:
+            return False
+        def press():
+            callback = self.on_press if self.trigger_mode == "push_to_talk" else self.on_toggle
+            held[:] = [True]
+            if callback:
+                callback()
+        def release():
+            held.clear()
+            if self.trigger_mode == "push_to_talk" and self.on_release:
+                self.on_release()
+        try:
+            portal = ShortcutPortal(self.hotkey_str, press, release, self._stop_event,
+                                    lambda status: setattr(self, "hotkey_status", status))
+            asyncio.run(portal.run())
+            return True
+        except PortalLost:
+            pass  # The portal already reported "portal_lost".
+        except ImportError:
+            return False
+        except Exception as error:
+            # Backend errors and unanswered permission requests are not a refusal.
+            print(f"[Hotkey] Shortcut portal failed, falling back: {error}")
+            self.hotkey_status = "portal_unavailable"
+        if held:
+            # The Deactivated signal died with the session; never leave push-to-talk recording.
+            release()
+        self._stop_event.wait(1.0)
+        return False
+
+    def _run_evdev_guarded(self) -> None:
+        delay = 1.0
+        while self.is_running:
+            started = time.monotonic()
+            try:
+                self._run_evdev_listener()
+                return
+            except Exception as error:
+                print(f"[Hotkey] evdev listener crashed, retrying in {delay:.0f}s: {error}")
+                self.hotkey_status = "listener_error"
+            if time.monotonic() - started > 60:
+                delay = 1.0
+            if self._stop_event.wait(delay):
+                return
+            delay = min(delay * 2, 30.0)
 
     def _handle_evdev_key(self, code: int, value: int, combo_parts: List[str], key_map: dict) -> None:
         with self._lock:
