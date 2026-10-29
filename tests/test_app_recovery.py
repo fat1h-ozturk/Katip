@@ -73,20 +73,21 @@ def test_failed_injection_never_reports_success_and_keeps_result(tmp_path):
     app._process_audio_worker(app.pending_audio)
     drain(app)
     assert app.last_text == 'Complete text' and app.pending_audio
-    assert app.last_error == 'Paste failed'
+    assert app.session.state == State.READY and app.last_error.startswith('Paste failed')
     app.pill.show_success.assert_not_called()
 
 
-def test_unverifiable_target_leaves_text_ready_without_pasting(tmp_path):
+def test_unverifiable_target_is_pasted_into_the_focused_window(tmp_path):
+    # Wayland exposes no window identity; refusing to paste there is itself the failure.
     app, _ = make_app(tmp_path)
     app._target = None
     app.session.job.target = None
     app._process_audio_worker(app.pending_audio)
     drain(app)
-    assert app.session.state == State.READY
-    assert app.last_text == 'Complete text' and app.pending_audio
-    app.injector.inject_text.assert_not_called()
-    app.pill.show_success.assert_not_called()
+    app.injector.inject_text.assert_called_once()
+    assert app.session.state == State.COMPLETED and not app.pending_audio
+    app.pill.show_success.assert_called_once()
+    assert app.diagnostics.snapshot()[-1]['code'] == 'INPUT_SENT'
 
 
 def test_empty_output_is_actionable_and_preserves_audio(tmp_path):
@@ -276,7 +277,8 @@ def test_target_change_prevents_delivery(tmp_path, monkeypatch):
     app._process_audio_worker(app.pending_audio)
     drain(app)
     app.injector.inject_text.assert_not_called()
-    assert app.last_text and app.pending_audio and 'TARGET_CHANGED' in app.last_error
+    assert app.session.state == State.READY
+    assert app.last_text and app.pending_audio and 'değiştiği' in app.last_error
 
 
 def test_result_dialog_exposes_text_and_diagnostics(tmp_path):
@@ -309,7 +311,9 @@ def test_target_change_during_clipboard_sync_prevents_paste(tmp_path, monkeypatc
     monkeypatch.setattr('katip.platform.target.target_unchanged', Mock(side_effect=[True, True, False]))
     app._process_audio_worker(app.pending_audio)
     drain(app)
-    assert app.pending_audio and 'TARGET_CHANGED' in app.last_error
+    # The text was already on the clipboard; the user is told to paste it themselves.
+    assert not app.pending_audio and app.session.state == State.READY
+    assert 'değiştiği' in app.last_error and 'panoya kopyalandı' in app.last_error
 
 
 def test_failure_log_names_the_stage_that_was_running(tmp_path):
@@ -332,24 +336,25 @@ def test_clean_exit_is_recorded_once_for_tray_quit_and_logout(tmp_path):
     assert [event['event'] for event in app.app_diagnostics.snapshot()] == ['app_stopped']
 
 
-def test_unverifiable_target_copies_to_clipboard_and_frees_next_dictation(tmp_path):
+def test_failed_paste_copies_to_clipboard_and_frees_next_dictation(tmp_path):
     app, _ = make_app(tmp_path)
     app.session.job.target = None
     app.injector.restore_clipboard = False
+    app.injector.inject_text.return_value = False
+    app.injector.last_error = 'Otomatik yapıştırma başarısız.'
     app.injector.set_clipboard.return_value = True
     app._process_audio_worker(app.pending_audio)
     drain(app)
     app.injector.set_clipboard.assert_called_once_with('Complete text')
-    app.injector.inject_text.assert_not_called()
     assert app.session.state == State.READY and not app.pending_audio
     assert 'panoya kopyalandı' in app.last_error and app.last_text == 'Complete text'
-    assert app.diagnostics.snapshot()[-1]['code'] == 'CLIPBOARD_ONLY'
+    assert app.diagnostics.snapshot()[-1]['code'] == 'COPIED'
 
 
 def test_failed_clipboard_copy_keeps_audio_for_manual_recovery(tmp_path):
     app, _ = make_app(tmp_path)
-    app.session.job.target = None
     app.injector.restore_clipboard = False
+    app.injector.inject_text.return_value = False
     app.injector.set_clipboard.return_value = False
     app._process_audio_worker(app.pending_audio)
     drain(app)

@@ -474,16 +474,15 @@ class KatipApp:
             else:
                 self.session.transition(State.DELIVERING)
                 self._spawn(self._deliver_worker, job, result)
-        elif event.kind == "ready_unverified":
-            if event.value:
+        elif event.kind == "clipboard_fallback":
+            copied, reason = event.value
+            if copied:
                 # The text is safely on the clipboard; holding the audio would block the next dictation.
                 self.recorder.discard_audio()
                 self.pending_audio = b""
-                self._on_processing_ready(self.last_text, "Hedef pencere bu masaüstünde (ör. Wayland) doğrulanamadığından "
-                                          "otomatik yapıştırılmadı. Metin panoya kopyalandı; Ctrl+V ile yapıştırın.")
+                self._on_processing_ready(self.last_text, f"{reason} Metin panoya kopyalandı; Ctrl+V ile yapıştırın.")
             else:
-                self._on_processing_ready(self.last_text, "Hedef pencere bu masaüstünde (ör. Wayland) doğrulanamadığından "
-                                          "otomatik yapıştırılmadı. Metin hazır; Son Sonuç menüsünden kopyalayın.")
+                self._on_processing_ready(self.last_text, f"{reason} Metin hazır; Son Sonuç menüsünden kopyalayın.")
         elif event.kind == "delivered":
             success, error, warning = event.value
             if success:
@@ -500,27 +499,39 @@ class KatipApp:
         try:
             job.check()
             from .platform.target import target_unchanged
-            if job.target is None:
-                # Never send input to an unverified window; the clipboard is safe unless the user asked to keep it.
-                copied = not self.injector.restore_clipboard and self.injector.set_clipboard(result.text)
-                self.diagnostics.event("delivery_finished", stage="delivery",
-                                       code="CLIPBOARD_ONLY" if copied else "TARGET_UNVERIFIED")
-                self._emit(job, "ready_unverified", copied)
+            # An unverifiable target (e.g. Wayland) is the window focused now; a known target must still match.
+            if job.target is not None and not target_unchanged(job.target):
+                self.diagnostics.event("delivery_finished", stage="delivery", code="TARGET_CHANGED")
+                self._clipboard_fallback(job, result, "Hedef pencere değiştiği için otomatik yapıştırılmadı.")
                 return
-            if not target_unchanged(job.target):
-                self._emit(job, "error", "[TARGET_CHANGED] Hedef pencere değişti veya doğrulanamıyor; metin Son Sonuç menüsünde hazır.")
-                return
-            self.diagnostics.event("delivery_started", stage="delivery")
+            self.diagnostics.event("delivery_started", stage="delivery",
+                                   code="TARGET_VERIFIED" if job.target is not None else "TARGET_UNVERIFIED")
             def check_delivery():
                 job.check()
-                if not target_unchanged(job.target):
+                if job.target is not None and not target_unchanged(job.target):
                     raise ProviderError("TARGET_CHANGED", "delivery", "Hedef pencere değişti; metin Son Sonuç menüsünde korunuyor.")
-            success = self.injector.inject_text(result.text, before_paste=check_delivery)
+            try:
+                success = self.injector.inject_text(result.text, before_paste=check_delivery)
+            except ProviderError as error:
+                if error.code != "TARGET_CHANGED":
+                    raise
+                self.diagnostics.event("delivery_finished", stage="delivery", code="TARGET_CHANGED")
+                self._clipboard_fallback(job, result, "Hedef pencere değiştiği için otomatik yapıştırılmadı.")
+                return
             self.diagnostics.event("delivery_finished", stage="delivery", code="INPUT_SENT" if success else "DELIVERY_FAILED")
-            self._emit(job, "delivered", (success, self.injector.last_error or "[DELIVERY_FAILED] Metin Son Sonuç menüsünde korunuyor.",
-                                          getattr(self.injector, "last_warning", "")))
+            if success:
+                self._emit(job, "delivered", (True, "", getattr(self.injector, "last_warning", "")))
+            else:
+                self._clipboard_fallback(job, result, self.injector.last_error or "Otomatik yapıştırma yapılamadı.")
         except Exception as error:
             self._emit(job, "error", self._safe_error(error))
+
+    def _clipboard_fallback(self, job, result, reason):
+        """Never paste blind into the wrong window; leave the text one Ctrl+V away instead."""
+        job.check()
+        copied = not self.injector.restore_clipboard and self.injector.set_clipboard(result.text)
+        self.diagnostics.event("clipboard_fallback", stage="delivery", code="COPIED" if copied else "NOT_COPIED")
+        self._emit(job, "clipboard_fallback", (copied, reason))
 
     def cancel_processing(self):
         if not self.is_busy_processing:

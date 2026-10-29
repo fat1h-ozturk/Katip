@@ -6,6 +6,7 @@ into the currently active window.
 
 import abc
 import ctypes
+import os
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,37 @@ def _system_run(*args, **kwargs):
     kwargs.setdefault("env", clean_environment())
     kwargs.setdefault("timeout", 3)
     return subprocess.run(*args, **kwargs)
+
+
+_remote_desktop = None
+
+
+def _portal_keyboard():
+    # One portal session per process, so a recreated injector keeps the user's grant.
+    global _remote_desktop
+    if _remote_desktop is None:
+        from .config import get_config_dir
+        from .platform.remote_desktop import RemoteDesktopKeyboard
+        _remote_desktop = RemoteDesktopKeyboard(get_config_dir() / "remote-desktop.token")
+    return _remote_desktop
+
+
+def _ydotool_socket_available() -> bool:
+    candidates = [os.environ.get("YDOTOOL_SOCKET", "")]
+    if os.environ.get("XDG_RUNTIME_DIR"):
+        candidates.append(os.path.join(os.environ["XDG_RUNTIME_DIR"], ".ydotool_socket"))
+    candidates.append("/tmp/.ydotool_socket")
+    return any(path and os.path.exists(path) for path in candidates)
+
+
+def _wait_until(released, timeout=1.0) -> bool:
+    """Poll until the hotkey's modifiers are physically up, so Ctrl+V is not Ctrl+Alt+V."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if released():
+            return True
+        time.sleep(0.02)
+    return False
 
 
 class BaseInjector(abc.ABC):
@@ -131,6 +163,7 @@ class LinuxInjector(BaseInjector):
         self.has_xclip = is_linux and (shutil.which("xclip") is not None)
         self.has_ydotool = is_linux and (shutil.which("ydotool") is not None)
         self.has_xdotool = is_linux and (shutil.which("xdotool") is not None)
+        self.has_wtype = is_linux and (shutil.which("wtype") is not None)
 
     def can_restore_clipboard(self) -> bool:
         commands = []
@@ -183,40 +216,56 @@ class LinuxInjector(BaseInjector):
         return False
 
     def simulate_paste(self) -> bool:
-        # 1. Try ydotool (Wayland & generic Linux input device)
-        if self.has_ydotool:
+        wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
+        if not wayland and self._xdotool_paste():
+            return True
+        # Without its daemon, ydotool cannot send anything; do not count it as a paste path.
+        if self.has_ydotool and _ydotool_socket_available():
+            sent = self._ydotool_paste()
+            if sent is not None:
+                return sent
+        if not wayland:
+            return False
+        # xdotool reaches only XWayland windows here and would report a paste that never happened.
+        if self.has_wtype:
+            shift = ["-M", "shift"] if self.terminal_paste else []
+            release = ["-m", "shift"] if self.terminal_paste else []
             try:
-                if self.terminal_paste:
-                    # 29=LEFTCTRL, 42=LEFTSHIFT, 47=V
-                    res = _system_run(
-                        ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
-                        capture_output=True, timeout=2
-                    )
-                else:
-                    # 29=LEFTCTRL, 47=V
-                    res = _system_run(
-                        ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
-                        capture_output=True, timeout=2
-                    )
+                res = _system_run(["wtype", "-M", "ctrl", *shift, "v", *release, "-m", "ctrl"],
+                                  capture_output=True, timeout=2)
                 if res.returncode == 0:
                     return True
             except subprocess.TimeoutExpired:
-                # Keys may already have been sent; never paste a second time through xdotool.
                 return False
             except Exception as e:
-                print(f"[LinuxInjector] ydotool error: {e}")
+                print(f"[LinuxInjector] wtype error: {e}")
+        return _portal_keyboard().paste(self.terminal_paste)
 
-        # 2. Try xdotool (X11)
-        if self.has_xdotool:
-            try:
-                key_combo = "ctrl+shift+v" if self.terminal_paste else "ctrl+v"
-                res = _system_run(["xdotool", "key", key_combo], capture_output=True, timeout=2)
-                if res.returncode == 0:
-                    return True
-            except Exception as e:
-                print(f"[LinuxInjector] xdotool error: {e}")
+    def _xdotool_paste(self) -> bool:
+        if not self.has_xdotool:
+            return False
+        try:
+            key_combo = "ctrl+shift+v" if self.terminal_paste else "ctrl+v"
+            # --clearmodifiers lifts the still-held hotkey modifiers for the synthetic paste.
+            res = _system_run(["xdotool", "key", "--clearmodifiers", key_combo], capture_output=True, timeout=2)
+            return res.returncode == 0
+        except Exception as e:
+            print(f"[LinuxInjector] xdotool error: {e}")
+            return False
 
-        return False
+    def _ydotool_paste(self):
+        """True when sent, False when keys may have been sent (never retry), None to try another path."""
+        # 29=LEFTCTRL, 42=LEFTSHIFT, 47=V
+        keys = ["29:1", "42:1", "47:1", "47:0", "42:0", "29:0"] if self.terminal_paste else ["29:1", "47:1", "47:0", "29:0"]
+        try:
+            res = _system_run(["ydotool", "key", *keys], capture_output=True, timeout=2)
+            return True if res.returncode == 0 else None
+        except subprocess.TimeoutExpired:
+            # Keys may already have been sent; never paste a second time through another tool.
+            return False
+        except Exception as e:
+            print(f"[LinuxInjector] ydotool error: {e}")
+            return None
 
 
 class WindowsInjector(BaseInjector):
@@ -389,10 +438,12 @@ class WindowsInjector(BaseInjector):
 
             user32 = ctypes.windll.user32
 
-            # Ensure modifier keys from shortcut (Alt, Space) are released before Ctrl+V
-            user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
-            user32.keybd_event(VK_SPACE, 0, KEYEVENTF_KEYUP, 0)
-            time.sleep(0.02)
+            modifiers = (0x10, VK_CONTROL, VK_MENU, 0x5B, 0x5C)  # Shift, Ctrl, Alt, Win
+            if not _wait_until(lambda: not any(user32.GetAsyncKeyState(key) & 0x8000 for key in modifiers)):
+                # Still held: release the default hotkey's keys rather than sending Ctrl+Alt+V.
+                user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+                user32.keybd_event(VK_SPACE, 0, KEYEVENTF_KEYUP, 0)
+                time.sleep(0.02)
 
             # Key down: Ctrl + V
             user32.keybd_event(VK_CONTROL, 0, 0, 0)
@@ -450,6 +501,13 @@ class MacInjector(BaseInjector):
     def simulate_paste(self) -> bool:
         """Sends Cmd+V keystroke via AppleScript."""
         script = 'tell application "System Events" to keystroke "v" using command down'
+        try:
+            import Quartz
+            mask = (Quartz.kCGEventFlagMaskCommand | Quartz.kCGEventFlagMaskControl
+                    | Quartz.kCGEventFlagMaskAlternate | Quartz.kCGEventFlagMaskShift)
+            _wait_until(lambda: not Quartz.CGEventSourceFlagsState(Quartz.kCGEventSourceStateHIDSystemState) & mask)
+        except Exception:
+            pass
         try:
             res = _system_run(
                 ["osascript", "-e", script],
