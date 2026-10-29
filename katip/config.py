@@ -67,6 +67,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "language": "auto",  # "auto", "tr", "en"
     "restore_clipboard": False,
     "input_device_index": -1,
+    "input_device_name": "",
 }
 
 

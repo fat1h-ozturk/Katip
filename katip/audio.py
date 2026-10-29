@@ -96,12 +96,18 @@ class AudioRecorder:
     MAX_SECONDS = 600
     MAX_BYTES = 64 * 1024 * 1024
     PROGRESS_SECONDS = 5
+    # Real microphones never deliver exact digital silence; a muted or permission-blocked one does.
+    SILENT_LEVEL = 0.0002
 
     def __init__(self, on_level_callback: Optional[Callable[[float], None]] = None, device_index: int = -1, vad_mode: int = 2,
-                 on_error_callback: Optional[Callable[[str], None]] = None):
+                 on_error_callback: Optional[Callable[[str], None]] = None, device_name: str = "",
+                 on_notice_callback: Optional[Callable[[str], None]] = None):
         self.on_error_callback = on_error_callback
         self.on_level_callback = on_level_callback
+        self.on_notice_callback = on_notice_callback
         self.device_index = device_index
+        self.device_name = device_name
+        self._max_level: Optional[float] = None
         self.vad_mode = vad_mode
         self._actual_rate = self.SAMPLE_RATE
         self.is_recording = False
@@ -142,6 +148,7 @@ class AudioRecorder:
             self.is_recording = True
             self.last_error = ""
             self._captured_bytes = 0
+            self._max_level = 0.0
             self.diagnostics.event("recording_started", stage="capture")
             self._stop = threading.Event()
             self._thread = threading.Thread(target=self._record_loop, args=(self._stop,), daemon=True)
@@ -181,6 +188,10 @@ class AudioRecorder:
                                sample_rate=self._actual_rate)
         if self.last_error:
             return self._wav(pcm, self._actual_rate)
+        if self._max_level is not None and self._max_level < self.SILENT_LEVEL:
+            self.diagnostics.event("failed", stage="capture", code="CAPTURE_SILENT")
+            raise CaptureError("[CAPTURE_SILENT] Mikrofondan hiç sinyal gelmedi; kayıt korunuyor. Mikrofon iznini, "
+                               "sessize alınmış olup olmadığını ve Ayarlar'daki mikrofon seçimini kontrol edin.")
         self.diagnostics.event("preprocessing_started", stage="preprocessing")
         audio = self._encode_wav([pcm])
         self.diagnostics.event("preprocessing_finished", stage="preprocessing", audio_bytes=len(audio))
@@ -227,26 +238,9 @@ class AudioRecorder:
         stream = None
         error = None
         try:
-            pa = self._ensure_pyaudio()
-            if pa is None:
-                raise CaptureError("Mikrofon başlatılamadı.")
-            stream_kwargs = {
-                "format": self.FORMAT, "channels": self.CHANNELS,
-                "input": True, "frames_per_buffer": self.CHUNK_SIZE,
-            }
-            if self.device_index is not None and self.device_index >= 0:
-                stream_kwargs["input_device_index"] = self.device_index
-            for rate in (self.SAMPLE_RATE, 48000, 44100):
-                if stop.is_set():
-                    return
-                try:
-                    with no_alsa_err():
-                        stream = pa.open(rate=rate, **stream_kwargs)
-                    self._actual_rate = rate
-                    break
-                except Exception:
-                    if rate == 44100:
-                        raise
+            stream = self._open_stream(stop)
+            if stream is None:
+                return
             self._stream = stream
             self.diagnostics.event("stream_opened", stage="capture", sample_rate=self._actual_rate)
             # Periodic progress shows when capture stopped advancing, even if the process dies later.
@@ -272,8 +266,13 @@ class AudioRecorder:
                     self.diagnostics.event("failed", stage="capture", code="CAPTURE_LIMIT",
                                            audio_bytes=captured, sample_rate=self._actual_rate)
                     break
-                if self.on_level_callback and data:
-                    self.on_level_callback(min(1.0, self._compute_rms(data) * 4.0))
+                if data:
+                    level = self._compute_rms(data)
+                    self._max_level = max(self._max_level or 0.0, level)
+                    if self.on_level_callback:
+                        self.on_level_callback(min(1.0, level * 4.0))
+        except CaptureError as exc:
+            error = str(exc)
         except Exception as exc:
             if not stop.is_set():
                 code = "CAPTURE_DEVICE_LOST" if isinstance(exc, OSError) and getattr(exc, "errno", None) in (-9985, -9996, 19) else "CAPTURE_READ_ERROR"
@@ -297,10 +296,70 @@ class AudioRecorder:
                 self.is_recording = False
                 self.last_error = error or ""
                 terminate = self._terminated
-            if terminate:
+            # PortAudio snapshots devices at init; after a device error the next start re-enumerates.
+            if terminate or error:
                 self._terminate_pyaudio()
             if error and self.on_error_callback:
                 self.on_error_callback(error)
+
+    def _resolve_device(self, pa):
+        """The saved index can point to another device after hot-plug; the name decides."""
+        if self.device_index is None or self.device_index < 0:
+            return None
+        def usable(index):
+            try:
+                info = pa.get_device_info_by_index(index)
+            except Exception:
+                return None
+            return info if info.get("maxInputChannels", 0) > 0 else None
+        info = usable(self.device_index)
+        if info and (not self.device_name or info.get("name") == self.device_name):
+            return self.device_index
+        if self.device_name:
+            for index in range(pa.get_device_count()):
+                info = usable(index)
+                if info and info.get("name") == self.device_name and info.get("hostApi", 0) == 0:
+                    self.diagnostics.event("device_resolved", stage="capture", code="DEVICE_MOVED")
+                    return index
+        self.diagnostics.event("device_resolved", stage="capture", code="DEVICE_NOT_FOUND")
+        if self.on_notice_callback:
+            self.on_notice_callback("Seçili mikrofon bulunamadı; varsayılan sistem mikrofonu kullanılıyor.")
+        return None
+
+    def _open_stream(self, stop):
+        stream_kwargs = {
+            "format": self.FORMAT, "channels": self.CHANNELS,
+            "input": True, "frames_per_buffer": self.CHUNK_SIZE,
+        }
+        # A second attempt re-initializes PortAudio, which picks up re-plugged or resumed devices.
+        for attempt in range(2):
+            pa = self._ensure_pyaudio()
+            if pa is None:
+                raise CaptureError("Mikrofon başlatılamadı.")
+            index = self._resolve_device(pa)
+            if index is None:
+                stream_kwargs.pop("input_device_index", None)
+            else:
+                stream_kwargs["input_device_index"] = index
+            for rate in (self.SAMPLE_RATE, 48000, 44100):
+                if stop.is_set():
+                    return None
+                try:
+                    with no_alsa_err():
+                        stream = pa.open(rate=rate, **stream_kwargs)
+                    self._actual_rate = rate
+                    return stream
+                except Exception as exc:
+                    failure = exc
+                    if rate == 44100 and attempt == 1:
+                        self.diagnostics.event("failed", stage="capture", code="CAPTURE_OPEN_FAILED",
+                                               exception_type=type(exc).__name__, errno=getattr(exc, "errno", 0) or 0)
+                        raise CaptureError("[CAPTURE_OPEN_FAILED] Mikrofon açılamadı. Mikrofonun bağlı olduğunu, başka bir "
+                                           "uygulamanın kullanmadığını ve mikrofon iznini kontrol edin.") from None
+            self.diagnostics.event("failed", stage="capture", code="CAPTURE_OPEN_RETRY",
+                                   exception_type=type(failure).__name__, errno=getattr(failure, "errno", 0) or 0)
+            self._terminate_pyaudio()
+        return None
 
     def _terminate_pyaudio(self) -> None:
         with self._lock:

@@ -87,3 +87,18 @@ def test_conflicting_alias_lines_do_not_overwrite_or_save(dialog):
     dialog._save_settings()
     dialog.config.update.assert_not_called()
     assert "farklı yazımlara" in settings_module.QMessageBox.warning.call_args.args[2]
+
+
+def test_selected_microphone_is_saved_with_its_name(dialog):
+    dialog.config.update({"input_device_index": 3, "input_device_name": "USB Headset"})
+    # Before the scan finishes the placeholder row must not overwrite the saved name.
+    dialog._devices_loaded = False
+    dialog.mic_combo.addItem("Seçili mikrofon (aygıtlar yükleniyor)", 3)
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(3))
+    assert dialog._selected_device_name() == "USB Headset"
+    dialog._populate_devices([{"index": 2, "name": "Built-in"}, {"index": 3, "name": "USB Headset 2"}])
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(3))
+    dialog._save_settings()
+    assert dialog.config.get("input_device_name") == "USB Headset 2"
+    dialog.mic_combo.setCurrentIndex(dialog.mic_combo.findData(-1))
+    assert dialog._selected_device_name() == ""

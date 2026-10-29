@@ -54,7 +54,8 @@ def test_failed_capture_notifies_and_retains_audio():
         recorder.stop_recording()
         recorder.terminate()
         assert stream.close.call_count == 2
-        pa.return_value.terminate.assert_called_once()
+        # The device error released PortAudio, so the retry re-enumerated devices.
+        assert pa.call_count == 2 and pa.return_value.terminate.call_count == 2
 
 
 def test_blocked_worker_cannot_restart_or_lose_frames():

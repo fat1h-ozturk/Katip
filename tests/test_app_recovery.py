@@ -22,7 +22,7 @@ def make_app(tmp_path):
     app._capture_job_id = app.session.job.id
     app._target = Target('fake', 'editor')
     app.session.job.target = app._target
-    app.recorder = Mock(is_recording=False, is_capturing=False, has_pending_audio=False, last_error='', device_index=-1, vad_mode=2)
+    app.recorder = Mock(is_recording=False, is_capturing=False, has_pending_audio=False, last_error='', device_index=-1, device_name='', vad_mode=2)
     app.recorder.raw_wav.return_value = b'original-raw-wav'
     app.recorder.retry_audio.return_value = b'retained-frames'
     app.pending_audio = b'original-audio'

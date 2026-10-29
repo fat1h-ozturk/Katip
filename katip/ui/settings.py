@@ -79,6 +79,7 @@ class SettingsDialog(QDialog):
         self.injection_test_ready.connect(self._on_injection_test_ready)
         self._injection_running = False
         self._injection_target = None
+        self._devices_loaded = False
         self._build_ui()
         self._load_values()
         # PortAudio init/terminate is not thread-safe: no mic test while the device scan runs.
@@ -579,6 +580,8 @@ class SettingsDialog(QDialog):
             "agy_model": _get_val(self.agy_llm_combo),
             "language": self.language_combo.currentData(),
             "input_device_index": self.mic_combo.currentData(),
+            # The name finds the same microphone again when hot-plug shifts PortAudio indexes.
+            "input_device_name": self._selected_device_name(),
             "vad_mode": self.vad_combo.currentData(),
             "hotkey": self.hotkey_edit.get_hotkey(),
             "trigger_mode": self.trigger_mode_combo.currentData(),
@@ -630,7 +633,15 @@ class SettingsDialog(QDialog):
         except RuntimeError:
             pass  # The settings window was already destroyed.
 
+    def _selected_device_name(self) -> str:
+        if self.mic_combo.currentData() == -1:
+            return ""
+        if self.mic_combo.currentData() == self.config.get("input_device_index", -1) and not self._devices_loaded:
+            return self.config.get("input_device_name", "")  # Placeholder row until the scan finishes.
+        return self.mic_combo.currentText()
+
     def _populate_devices(self, devices):
+        self._devices_loaded = True
         selected = self.mic_combo.currentData()
         self.mic_combo.clear()
         self.mic_combo.addItem("Varsayılan Sistem Mikrofonu", -1)

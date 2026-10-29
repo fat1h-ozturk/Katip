@@ -50,6 +50,7 @@ class WorkerSignals(QObject):
     notify_received = Signal()
     settings_received = Signal()
     update_available = Signal(str, str)
+    notice = Signal(str)
 
 class KatipApp:
     """The central Katip application."""
@@ -94,6 +95,7 @@ class KatipApp:
         self.signals.notify_received.connect(self._on_notify_running)
         self.signals.settings_received.connect(self.open_settings)
         self.signals.update_available.connect(self._on_update_available)
+        self.signals.notice.connect(self._notify_recovery)
         self.update_toast = None
 
         # Core Engines
@@ -102,12 +104,7 @@ class KatipApp:
             restore_clipboard=self.config.get("restore_clipboard", False),
             terminal_paste_mode=self.config.get("terminal_paste_mode", False)
         )
-        self.recorder = AudioRecorder(
-            on_level_callback=lambda lvl: self.signals.level_changed.emit(lvl),
-            on_error_callback=lambda error: None,
-            device_index=self.config.get("input_device_index", -1),
-            vad_mode=self.config.get("vad_mode", 2)
-        )
+        self.recorder = self._new_recorder()
 
         # The Qt indicator is always available; optional layer-shell starts only
         # through its checked helper protocol and falls back to Qt.
@@ -162,6 +159,22 @@ class KatipApp:
 
         # Check for updates in background shortly after launch
         QTimer.singleShot(2500, self._check_for_updates)
+
+    def _new_recorder(self) -> AudioRecorder:
+        return AudioRecorder(
+            on_level_callback=lambda level: self.signals.level_changed.emit(level),
+            on_error_callback=lambda error: None,
+            on_notice_callback=lambda message: self.signals.notice.emit(message),
+            device_index=self.config.get("input_device_index", -1),
+            device_name=self.config.get("input_device_name", ""),
+            vad_mode=self.config.get("vad_mode", 2),
+        )
+
+    def _recorder_outdated(self) -> bool:
+        return (getattr(self.recorder, "device_index", -1), getattr(self.recorder, "device_name", ""),
+                getattr(self.recorder, "vad_mode", 2)) != (
+            self.config.get("input_device_index", -1), self.config.get("input_device_name", ""),
+            self.config.get("vad_mode", 2))
 
     def _get_gemini_service(self) -> GeminiService:
         """Returns a cached GeminiService, recreating only if config changed."""
@@ -319,12 +332,9 @@ class KatipApp:
         if self.settings_dialog and self.settings_dialog.isVisible():
             self._notify_recovery("Dikteyi başlatmadan önce ayarlar penceresini kapatın.")
             return
-        desired_device = self.config.get("input_device_index", -1)
-        desired_vad = self.config.get("vad_mode", 2)
-        if self.recorder.device_index != desired_device or self.recorder.vad_mode != desired_vad:
+        if self._recorder_outdated():
             self.recorder.terminate()
-            self.recorder = AudioRecorder(device_index=desired_device, vad_mode=desired_vad,
-                on_level_callback=lambda level: self.signals.level_changed.emit(level))
+            self.recorder = self._new_recorder()
         from .platform.target import capture_target
         self._target = capture_target()
         job = self.session.begin(self.config.data)
@@ -907,16 +917,9 @@ class KatipApp:
             )
 
         # Update audio input device if changed
-        new_dev_idx = self.config.get("input_device_index", -1)
-        new_vad_mode = self.config.get("vad_mode", 2)
-        if not self.recorder.has_pending_audio and (getattr(self.recorder, "device_index", -1) != new_dev_idx or getattr(self.recorder, "vad_mode", 2) != new_vad_mode):
+        if not self.recorder.has_pending_audio and self._recorder_outdated():
             self.recorder.terminate()
-            self.recorder = AudioRecorder(
-                on_level_callback=lambda lvl: self.signals.level_changed.emit(lvl),
-                on_error_callback=lambda error: None,
-                device_index=new_dev_idx,
-                vad_mode=self.config.get("vad_mode", 2)
-            )
+            self.recorder = self._new_recorder()
         # Invalidate cached services so they pick up new config on next use
         for service in (self._gemini_service, self._groq_service, self._openai_service, self._claude_service):
             if service is not None:

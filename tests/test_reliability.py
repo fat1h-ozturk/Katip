@@ -347,3 +347,83 @@ def test_crash_reporting_logs_only_exception_types(tmp_path, monkeypatch):
     blocked = tmp_path / 'file'
     blocked.write_text('')
     assert not module.install_crash_reporting(blocked / 'sub', diagnostics)
+
+
+def fake_portaudio(devices, stream=None, open_error=None):
+    pa = Mock()
+    pa.get_device_count.return_value = len(devices)
+    def info(index):
+        if index >= len(devices):
+            raise OSError(-9996, 'Invalid device')
+        return {'name': devices[index], 'maxInputChannels': 1, 'hostApi': 0}
+    pa.get_device_info_by_index.side_effect = info
+    if open_error:
+        pa.open.side_effect = open_error
+    else:
+        pa.open.return_value = stream
+    return pa
+
+
+def one_second_stream(recorder, chunk=b'\0\x20' * 16000):
+    stream = Mock()
+    def read(*_, **__):
+        recorder._stop.set()
+        return chunk
+    stream.read.side_effect = read
+    return stream
+
+
+@pytest.mark.parametrize('devices, expected, code', [
+    (['Built-in', 'USB Headset'], 1, None),
+    (['USB Headset', 'Built-in'], 0, 'DEVICE_MOVED'),
+    (['Built-in'], None, 'DEVICE_NOT_FOUND'),
+])
+def test_saved_microphone_is_found_by_name_after_hot_plug(devices, expected, code):
+    notices = []
+    recorder = AudioRecorder(device_index=1, device_name='USB Headset', on_notice_callback=notices.append)
+    recorder._vad = None
+    stream = one_second_stream(recorder)
+    with patch('katip.audio.pyaudio.PyAudio', return_value=fake_portaudio(devices, stream)) as pa:
+        recorder.start_recording()
+        recorder._thread.join(3)
+        kwargs = pa.return_value.open.call_args.kwargs
+        assert kwargs.get('input_device_index') == expected
+        codes = [e.get('code') for e in recorder.diagnostics.snapshot() if e['event'] == 'device_resolved']
+        assert codes == ([code] if code else [])
+        assert bool(notices) is (code == 'DEVICE_NOT_FOUND')
+        recorder.discard_audio()
+        recorder.terminate()
+
+
+def test_open_failure_reinitializes_portaudio_once_then_reports_clearly():
+    errors = []
+    recorder = AudioRecorder(on_error_callback=errors.append)
+    stream = one_second_stream(recorder)
+    stale = fake_portaudio(['Built-in'], open_error=OSError(-9996, 'PRIVATE'))
+    fresh = fake_portaudio(['Built-in'], stream)
+    with patch('katip.audio.pyaudio.PyAudio', side_effect=[stale, fresh]):
+        recorder.start_recording()
+        recorder._thread.join(3)
+    assert not errors and stale.terminate.called and recorder.raw_wav()
+    recorder.discard_audio()
+    broken = fake_portaudio(['Built-in'], open_error=OSError(-9996, 'PRIVATE'))
+    recorder = AudioRecorder(on_error_callback=errors.append)
+    with patch('katip.audio.pyaudio.PyAudio', return_value=broken):
+        recorder.start_recording()
+        recorder._thread.join(3)
+    assert len(errors) == 1 and errors[0].startswith('[CAPTURE_OPEN_FAILED]')
+    assert 'kayıt korunuyor' not in errors[0] and 'PRIVATE' not in json.dumps(recorder.diagnostics.snapshot())
+    assert broken.open.call_count == 6
+
+
+def test_digital_silence_is_reported_as_a_microphone_problem_not_no_speech():
+    recorder = AudioRecorder()
+    stream = one_second_stream(recorder, chunk=b'\0\0' * 16000)
+    with patch('katip.audio.pyaudio.PyAudio', return_value=fake_portaudio(['Built-in'], stream)):
+        recorder.start_recording()
+        recorder._thread.join(3)
+        with pytest.raises(RuntimeError, match='CAPTURE_SILENT'):
+            recorder.stop_recording()
+        # The samples stay recoverable; the user may still save them.
+        assert recorder.has_pending_audio and recorder.raw_wav()
+        recorder.terminate()
