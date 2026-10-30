@@ -3,14 +3,15 @@ from unittest.mock import Mock
 
 import pytest
 from PySide6.QtWidgets import QApplication
+from katip import __version__
 from katip.app import KatipApp
 from katip.ui.toast import UpdateNotificationToast
 
 _app = QApplication.instance() or QApplication([])
 
 
-@pytest.mark.parametrize('tag,expected', [('v99.0.0', True), ('v0.4.6', False),
-    ('v0.3.9', False), ('v0.4.6-rc99', False), ('malformed', False)])
+@pytest.mark.parametrize('tag,expected', [('v99.0.0', True), (f'v{__version__}', False),
+    ('v0.3.9', False), (f'v{__version__}-rc99', False), ('malformed', False)])
 def test_update_checker_worker_emits_only_for_newer_stable_release(monkeypatch, tag, expected):
     url = 'https://github.com/fat1h-ozturk/Katip/releases/tag/v99.0.0'
     response = Mock(status_code=200, json=lambda: {'tag_name': tag, 'html_url': url})

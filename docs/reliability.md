@@ -1,6 +1,6 @@
 # Güvenilirlik çalışması — durum
 
-29 Ekim 2026 · Temel: v0.4.6 (`0fc304b`) · Sürüm numarası değişmedi.
+29 Ekim 2026 · Temel: v0.4.6 (`0fc304b`) · v0.4.7 sürümüne dahil edildi.
 
 Kabul çıtası: **uygulama çökmez, ses güvenilir biçimde alınır, metin güvenilir biçimde hedefe ulaşır**; ulaşamıyorsa kaybolmaz ve kullanıcı tek adımla (Ctrl+V) alabilir. Bu belge neyin **otomatik olarak doğrulandığını**, neyin **yalnız gerçek masaüstünde doğrulanabileceğini** ve sahada bir hata olursa **nasıl yakalanacağını** ayırır.
 
@@ -38,7 +38,8 @@ Tam test paketi: **387 geçti, 12 atlandı**;
 `ruff check katip tests/test_overlay_native.py` ve `mypy` temiz. Bu deneyler
 geçersiz test anahtarıyla, ücretli sağlayıcı çağrısı ve otomatik yapıştırma
 olmadan yapıldı; uçtan uca dikte kalitesini veya diğer platformları doğrulamaz.
-Sürüm numarası değişmedi; kurulu v0.4.6 paketi hâlâ hatalı bağımlılığı içerir.
+Bu doğrulama sırasında sürüm numarası değiştirilmedi. v0.4.6 paketi hatalı
+bağımlılığı içerir; v0.4.7, doğrulanan PySide6 6.11.3 sabitlemesini içerir.
 
 ## 30 Ekim 2026 — Windows/macOS CI düzeltmeleri
 
