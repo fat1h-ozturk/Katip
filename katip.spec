@@ -66,7 +66,10 @@ a = Analysis(
     hookspath=[str(project_root / "pyinstaller_hooks")],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "scipy", "pandas"],
+    # Runtime dependencies use importlib.metadata on supported Python versions.
+    # Exclude webrtcvad's Python < 3.8 fallback: it otherwise pulls in the
+    # pkg_resources runtime hook, which fails with setuptools >= 81.
+    excludes=["tkinter", "matplotlib", "scipy", "pandas", "pkg_resources", "setuptools"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
