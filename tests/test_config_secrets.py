@@ -180,6 +180,9 @@ def test_settings_dialog_shows_actionable_vault_error(tmp_path, monkeypatch):
         dialog._save_settings()
         assert "anahtar kasası kullanılamıyor" in warning.call_args.args[2]
     finally:
+        # Emitting a Qt signal must finish before its native receiver is deleted.
+        dialog._device_scan_thread.join(5)
+        assert not dialog._device_scan_thread.is_alive()
         dialog.close()
         delete(dialog)
 
@@ -190,18 +193,33 @@ def test_mic_test_waits_for_device_scan(tmp_path, monkeypatch):
     from katip.ui import settings as settings_module
     app = QApplication.instance() or QApplication([])
     release = threading.Event()
+    gui_thread = threading.get_ident()
+    update_threads = []
     monkeypatch.setattr(settings_module, "get_input_devices", lambda: release.wait(5) and [])
     monkeypatch.setattr(settings_module, "is_autostart_enabled", lambda: False)
     monkeypatch.setattr(settings_module, "is_desktop_installed", lambda: False)
     dialog = settings_module.SettingsDialog(ConfigManager(tmp_path / "config.json"))
     try:
         assert not dialog.test_mic_btn.isEnabled()
+        add_item = dialog.mic_combo.addItem
+        def observed_add_item(*args):
+            update_threads.append(threading.get_ident())
+            return add_item(*args)
+        monkeypatch.setattr(dialog.mic_combo, "addItem", observed_add_item)
         release.set()
+        dialog._device_scan_thread.join(5)
+        assert not dialog._device_scan_thread.is_alive()
+        # The worker has emitted, but UI updates must wait for the GUI event loop.
+        assert update_threads == [] and not dialog.test_mic_btn.isEnabled()
         deadline = time.monotonic() + 5
         while not dialog.test_mic_btn.isEnabled() and time.monotonic() < deadline:
             app.processEvents()
             time.sleep(0.01)
         assert dialog.test_mic_btn.isEnabled()
+        assert update_threads and set(update_threads) == {gui_thread}
     finally:
+        release.set()
+        dialog._device_scan_thread.join(5)
+        assert not dialog._device_scan_thread.is_alive()
         dialog.close()
         delete(dialog)

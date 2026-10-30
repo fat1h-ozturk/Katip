@@ -30,6 +30,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONFAULTHANDLER: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -53,7 +54,7 @@ jobs:
           uv run --no-sync ruff check katip
           uv run --no-sync mypy
       - name: Isolated regression tests
-        run: uv run --no-sync pytest -q --cov=katip --cov-branch --cov-report=term-missing --cov-report=json:coverage.json
+        run: uv run --no-sync pytest -v --cov=katip --cov-branch --cov-report=term-missing --cov-report=json:coverage.json
       - name: Gate new lifecycle, diagnostics and HTTP branches
         shell: bash
         run: |

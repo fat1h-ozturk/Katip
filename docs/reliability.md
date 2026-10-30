@@ -40,6 +40,28 @@ geçersiz test anahtarıyla, ücretli sağlayıcı çağrısı ve otomatik yapı
 olmadan yapıldı; uçtan uca dikte kalitesini veya diğer platformları doğrulamaz.
 Sürüm numarası değişmedi; kurulu v0.4.6 paketi hâlâ hatalı bağımlılığı içerir.
 
+## 30 Ekim 2026 — Windows/macOS CI düzeltmeleri
+
+[41104984674](https://github.com/fat1h-ozturk/Katip/actions/runs/41104984674) ve
+[40881854909](https://github.com/fat1h-ozturk/Katip/actions/runs/40881854909)
+çalışmalarının günlükleri incelendi. PySide6 6.11.3, Windows ve her iki macOS
+mimarisinde kilitli ortamdan başarıyla kuruldu; sürüm sabitlemesi korunuyor.
+Windows ve Apple Silicon test hataları, Linux'a özel `dbus-next` bağımlılığının
+atlama kontrolünden önce içe aktarılması ve alt süreç testlerindeki kodlama
+varsayımlarıydı. Portal testleri bağımlılık yokken ilgili testin başında atlanıyor;
+UTF-8 çıktısı açık kodlamayla okunuyor. Qt'nin macOS argüman dönüşümünden
+etkilenmemek için UTF-8 testinin çocuk süreç kaynağı ASCII kaçışlarıyla iletiliyor.
+
+Intel macOS'ta pytest, 122 test tamamlandıktan sonra aygıt tarama testine geçerken
+139 koduyla kapandı; günlükte yerel yığın izi yok. Önceki ayarlar testinin
+pencereyi işçi sinyal yaymayı bitirmeden silmesi bir yarıştı. Pencere silinmeden
+önce tarama işçisi bekleniyor. Ayarlar penceresinin üç işçi sonucu ayrıca açık
+kuyruk bağlantısı ve Qt slotlarıyla GUI thread'ine yönlendiriliyor; tarama testi
+GUI güncellemesinin işçi bitince değil GUI olay döngüsü çalışınca yapıldığını
+kontrol ediyor. CI artık test adını ve yerel hata izini yazıyor. Bu düzeltmeler
+Linux'ta doğrulanabilir; Intel macOS çökmesinin kapandığı ancak yeni uzak CI
+çalışmasıyla doğrulanabilir.
+
 ## Doğrulananlar (otomatik, bu makinede)
 
 | Kontrol | Sonuç |
@@ -52,7 +74,7 @@ Sürüm numarası değişmedi; kurulu v0.4.6 paketi hâlâ hatalı bağımlılı
 | `uv lock --check` | Kilit `pyproject.toml` ile tutarlı |
 | İsteğe bağlı performans paketi (`KATIP_RUN_PERFORMANCE=1`) | 12/12 geçti: 40–600 sn × 16/44,1/48 kHz, en kötü GUI p95 25,4 ms, p99 28,1 ms, ek RSS ≤57,5 MiB, 600 sn DSP ≈4,1 sn (sentetik PCM; gerçek konuşma/paket ölçümü değil) — [ayrıntılar](validation/2026-10-29-performance.json) |
 
-Testlerdeki mikrofon, HTTP, pano, klavye, portal ve süreç sınırları sahtedir; ağ testleri yerel bir HTTP sunucusuna gerçek istek atar, CLI testleri gerçek yerel alt süreç başlatır. GitHub üzerindeki CI matrisi (Windows, iki macOS mimarisi) henüz çalışmadı; ilk push'ta çalışacaktır.
+Testlerdeki mikrofon, HTTP, pano, klavye, portal ve süreç sınırları sahtedir; ağ testleri yerel bir HTTP sunucusuna gerçek istek atar, CLI testleri gerçek yerel alt süreç başlatır. GitHub CI matrisi çalıştırıldı; 30 Ekim Windows/macOS hatalarının ve düzeltmelerinin durumu aşağıdadır. Bu düzeltmelerin uzak matriste başarılı sonucu görülmeden sürüm etiketlenmemelidir.
 
 ## Neler değişti
 

@@ -123,7 +123,7 @@ class PortalBus:
     unique_name = ':1.7'
 
     def __init__(self, responses, fail_notify=0):
-        from dbus_next import Variant
+        Variant = pytest.importorskip("dbus_next").Variant
         self.connected = True
         self.calls = []
         self.responses = responses
@@ -164,7 +164,7 @@ def run_paste(monkeypatch, tmp_path, bus, terminal=False, keyboard=None):
 
 
 def test_portal_grant_sends_ctrl_v_and_keeps_restore_token(monkeypatch, tmp_path):
-    from dbus_next import Variant
+    Variant = pytest.importorskip("dbus_next").Variant
     bus = PortalBus(grant(Variant))
     keyboard, sent = run_paste(monkeypatch, tmp_path, bus)
     assert sent
@@ -179,7 +179,7 @@ def test_portal_grant_sends_ctrl_v_and_keeps_restore_token(monkeypatch, tmp_path
 
 
 def test_portal_reuses_stored_grant(monkeypatch, tmp_path):
-    from dbus_next import Variant
+    Variant = pytest.importorskip("dbus_next").Variant
     (tmp_path / 'remote-desktop.token').write_text('restore-0')
     bus = PortalBus(grant(Variant, token='restore-2'))
     run_paste(monkeypatch, tmp_path, bus)
@@ -195,7 +195,7 @@ def test_portal_reuses_stored_grant(monkeypatch, tmp_path):
     lambda V: {**grant(V), 'Start': None},                          # dialog left open
 ])
 def test_portal_refusal_or_timeout_is_a_failed_paste(monkeypatch, tmp_path, responses):
-    from dbus_next import Variant
+    Variant = pytest.importorskip("dbus_next").Variant
     table = {k: v for k, v in responses(Variant).items() if v is not None}
     bus = PortalBus(table)
     keyboard, sent = run_paste(monkeypatch, tmp_path, bus)
@@ -204,7 +204,7 @@ def test_portal_refusal_or_timeout_is_a_failed_paste(monkeypatch, tmp_path, resp
 
 
 def test_stale_portal_session_is_restarted_once(monkeypatch, tmp_path):
-    from dbus_next import Variant
+    Variant = pytest.importorskip("dbus_next").Variant
     from katip.platform.remote_desktop import RemoteDesktopKeyboard
     keyboard = RemoteDesktopKeyboard(tmp_path / 'token', permission_timeout=.2)
     bus = PortalBus(grant(Variant), fail_notify=1)
@@ -247,7 +247,7 @@ def test_portal_permission_is_requested_before_the_target_check(monkeypatch, des
 
 
 def test_cancelled_portal_paste_releases_pressed_keys(monkeypatch, tmp_path):
-    from dbus_next import Variant
+    Variant = pytest.importorskip("dbus_next").Variant
     from katip.platform.remote_desktop import RemoteDesktopKeyboard
     keyboard = RemoteDesktopKeyboard(tmp_path / 'token', permission_timeout=.2)
     bus = PortalBus(grant(Variant))

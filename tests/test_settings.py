@@ -19,6 +19,8 @@ def dialog(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_module.QMessageBox, "warning", Mock())
     widget = settings_module.SettingsDialog(ConfigManager(tmp_path / "config.json"))
     yield widget
+    widget._device_scan_thread.join(5)
+    assert not widget._device_scan_thread.is_alive()
     widget.close()
     delete(widget)
 
@@ -77,6 +79,8 @@ def test_alias_form_round_trip_and_budget_hint(dialog):
     try:
         assert reopened.aliases_edit.toPlainText() == "paysayd altı => PySide6\nkafe => Café"
     finally:
+        reopened._device_scan_thread.join(5)
+        assert not reopened._device_scan_thread.is_alive()
         reopened.close()
         delete(reopened)
 

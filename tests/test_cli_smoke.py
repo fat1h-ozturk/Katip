@@ -15,7 +15,7 @@ sys.argv = ['katip', '--version']
 runpy.run_module('katip', run_name='__main__')
 '''
     env = dict(os.environ, KATIP_PROFILE='ci-smoke', XDG_CONFIG_HOME=str(tmp_path))
-    result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=10)
+    result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, encoding="utf-8", timeout=10)
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith('Katip ')
     assert not list(tmp_path.iterdir())
@@ -23,7 +23,7 @@ runpy.run_module('katip', run_name='__main__')
 
 def test_candidate_status_cannot_control_production_instance(tmp_path):
     env = dict(os.environ, KATIP_PROFILE='ci-smoke', XDG_CONFIG_HOME=str(tmp_path))
-    result = subprocess.run([sys.executable, '-m', 'katip', '--status'], env=env, capture_output=True, text=True, timeout=10)
+    result = subprocess.run([sys.executable, '-m', 'katip', '--status'], env=env, capture_output=True, text=True, encoding="utf-8", timeout=10)
     assert result.returncode == 0
     assert 'Kapalı' in result.stdout
     assert not list(tmp_path.iterdir())

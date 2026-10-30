@@ -7,7 +7,7 @@ from typing import Callable, Optional
 import sys
 import threading
 import unicodedata
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, Signal, Slot, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -74,9 +74,9 @@ class SettingsDialog(QDialog):
         self.resize(750, 750)
         self.setStyleSheet(MINIMAL_DARK_STYLE)
 
-        self.devices_ready.connect(self._populate_devices)
-        self.mic_test_ready.connect(self._on_mic_test_ready)
-        self.injection_test_ready.connect(self._on_injection_test_ready)
+        self.devices_ready.connect(self._populate_devices, Qt.ConnectionType.QueuedConnection)
+        self.mic_test_ready.connect(self._on_mic_test_ready, Qt.ConnectionType.QueuedConnection)
+        self.injection_test_ready.connect(self._on_injection_test_ready, Qt.ConnectionType.QueuedConnection)
         self._injection_running = False
         self._injection_target = None
         self._devices_loaded = False
@@ -85,7 +85,8 @@ class SettingsDialog(QDialog):
         self._load_values()
         # PortAudio init/terminate is not thread-safe: no mic test while the device scan runs.
         self.test_mic_btn.setEnabled(False)
-        threading.Thread(target=self._load_devices_worker, daemon=True).start()
+        self._device_scan_thread = threading.Thread(target=self._load_devices_worker, daemon=True)
+        self._device_scan_thread.start()
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._reset_save_btn)
@@ -641,6 +642,7 @@ class SettingsDialog(QDialog):
             return self.config.get("input_device_name", "")  # Placeholder rows are not device names.
         return self.mic_combo.currentText()
 
+    @Slot(object)
     def _populate_devices(self, devices):
         self._devices_loaded = True
         self._missing_row = -1
@@ -695,6 +697,7 @@ class SettingsDialog(QDialog):
         except RuntimeError:
             pass
 
+    @Slot(str)
     def _on_mic_test_ready(self, message):
         self.mic_status_lbl.setText(message)
         self.test_mic_btn.setEnabled(True)
@@ -733,6 +736,7 @@ class SettingsDialog(QDialog):
             success, error = False, "Metin testi tamamlanamadı."
         self.injection_test_ready.emit(success, error)
 
+    @Slot(bool, str)
     def _on_injection_test_ready(self, success, error):
         # Give the desktop's synthetic key event time to reach the test field.
         QTimer.singleShot(150, lambda: self._finish_injection_test(success, error))

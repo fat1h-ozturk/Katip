@@ -12,7 +12,10 @@ from katip.infrastructure.process_runner import run_process
 
 
 def test_process_utf8_output():
-    result = run_process([sys.executable, '-c', 'print("Türkçe ıİş")'], timeout=2)
+    # ASCII source avoids macOS argv normalization; the child writes UTF-8 even
+    # when Windows uses a legacy code page for redirected Python output.
+    source = 'import sys; sys.stdout.buffer.write("Türkçe ıİş".encode("utf-8"))'
+    result = run_process([sys.executable, '-c', source.encode('ascii', 'backslashreplace').decode('ascii')], timeout=2)
     assert result.returncode == 0 and result.stdout.strip() == 'Türkçe ıİş'
 
 
