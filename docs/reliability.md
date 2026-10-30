@@ -6,6 +6,40 @@ Kabul çıtası: **uygulama çökmez, ses güvenilir biçimde alınır, metin g�
 
 > Bu çalışma gerçek mikrofon, gerçek masaüstüne yapıştırma veya canlı sağlayıcı API'si kullanmadan yapıldı. Aşağıdaki "Manuel kabul" listesi tamamlanmadan bir platform için "çalışıyor" denmemelidir.
 
+## 30 Ekim 2026 — kayıt sırasında yaklaşık 30 saniyede SIGABRT
+
+Bu tarihteki saha çökmesi kaynakta da tekrarlandı: `0c50e1b` ve kilitli
+PySide6 6.12.0 ile KDE Wayland'da gerçek Razer Seiren V3 Mini mikrofonuyla
+dikte kaydı 25 saniyede; kurulu v0.4.6 paketi aynı denemede 28 saniyede kapandı.
+Stderr ve özgün core dump, `none_dealloc: deallocating None` hatasını gösterdi.
+Ana thread kayıt göstergesini çizerken abort ediyordu; ses thread'i normal
+okumaya devam ediyordu. Kayıt durdurulmadığı için Groq isteği başlamamıştı.
+Bu çökme, aşağıdaki U01 için öne sürülen 25 saniyelik HTTP zaman aşımıyla
+açıklanmıyor; U01'in diğer sağlayıcı hataları için kabul adımları hâlâ açık.
+
+Mikrofon, ağ ve Wayland olmadan yapılan `QImage`/`QPainter` deneyi, 6.12.0'ın
+her native void çizim çağrısında Python `None` referansını bir azalttığını
+gösterdi. 60 FPS göstergede bu birikerek Python'ın ölümcül referans sayımı
+kontrolünü tetikliyor. PyInstaller bu hatanın koşulu değil. Aynı deneyde
+PySide6 6.11.3 referans kaybetmedi. Bu yüzden bağımlılık **6.11.3'e sabitlendi**;
+yeni bir bağlama sürümüne geçmeden native gösterge regresyonu çalıştırılmalı.
+
+`tests/test_overlay_native.py`, ayrı süreçte gerçek Qt ile 3.600 kayıt karesi
+(60 FPS'de bir dakika) ve 400 diğer durum karesi çizer; singleton referansını
+da kontrol eder. 3.11.17 üzerinde aynı deney 6.12.0 ile SIGABRT, 6.11.3 ile
+başarı verdi. Python'ın `None` nesnesini ölümsüz tuttuğu sürümler referans
+kaybını maskeleyebileceğinden 3.10/3.11 testleri korunmalı.
+
+Düzeltmeden sonra kaynak uygulama aynı gerçek mikrofonda **60 saniye açık
+kaldı ve IPC'ye yanıt verdi**. `katip.spec` ile yerelde derlenen bağımsız
+PyInstaller adayı da **65 saniye açık kaldı ve IPC'ye yanıt verdi**; teşhis
+kaydı 16 kHz'de 1.921.024 baytı (60 saniyeden fazla ham ses) doğruladı.
+Tam test paketi: **387 geçti, 12 atlandı**;
+`ruff check katip tests/test_overlay_native.py` ve `mypy` temiz. Bu deneyler
+geçersiz test anahtarıyla, ücretli sağlayıcı çağrısı ve otomatik yapıştırma
+olmadan yapıldı; uçtan uca dikte kalitesini veya diğer platformları doğrulamaz.
+Sürüm numarası değişmedi; kurulu v0.4.6 paketi hâlâ hatalı bağımlılığı içerir.
+
 ## Doğrulananlar (otomatik, bu makinede)
 
 | Kontrol | Sonuç |
