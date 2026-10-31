@@ -85,13 +85,22 @@ Testlerdeki mikrofon, HTTP, pano, klavye, portal ve süreç sınırları sahtedi
 | Mikrofon seçimi | Seçili mikrofon adıyla da saklanır; USB tak/çıkar PortAudio sırasını değiştirse de aynı cihaz bulunur, bulunamazsa varsayılan mikrofona geçilir ve bildirilir. Açma hatasında PortAudio bir kez yeniden başlatılır (askıya alma/yeniden takma sonrası eski cihaz listesi). Tamamen sessiz giriş (izin yok, sessize alınmış) "konuşma yok" yerine `CAPTURE_SILENT` olarak bildirilir. |
 | İş akışı | Kayıt durdurma, DSP, sağlayıcı çağrıları ve teslim GUI dışında tek iş kuyruğunda çalışır; sonuçları yalnız GUI uygular. Her iş kendi `job_id`, ayar kopyası ve iptal belirteciyle ilerler; eski sonuç yeni oturuma uygulanmaz. GUI tarafındaki beklenmeyen bir hata oturumu "meşgul" durumda bırakmaz; ses korunarak kurtarılabilir hataya düşülür. |
 | Sağlayıcılar | Altı sağlayıcı ortak sonuç sözleşmesini kullanır; OpenAI/Claude prompt hatası (B01) giderildi. Ham transkript formatter'dan önce saklanır; yeniden düzenleme aynı sağlayıcı/modelle ve ikinci STT çağrısı olmadan yapılır. Eksik, kesik veya protokol dışı çıktı otomatik teslim edilmez. |
-| Ağ | QtNetwork; aşama başına 90 sn, durdurmadan sonra toplam 180 sn, gerçek `abort`. Başlıkları gelmiş fakat gövdesi yarıda kesilmiş yanıt artık başarı sayılmaz. Otomatik ücretli tekrar veya sağlayıcı değişimi yoktur. Gemini'nin tek istek sınırını (≈7 dakika ses) aşan kayıt yüklenmeden önce açıkça reddedilir. |
+| Ağ | QtNetwork; istek başına 90 sn, durdurmadan sonra toplam 180 sn, gerçek `abort`. Başlıkları gelmiş fakat gövdesi yarıda kesilmiş yanıt artık başarı sayılmaz. Groq HTTP 429 istisnası dışında otomatik ücretli tekrar veya sağlayıcı değişimi yoktur. Gemini'nin tek istek sınırını (≈7 dakika ses) aşan kayıt yüklenmeden önce açıkça reddedilir. |
 | Teslim (yapıştırma) | Aşağıda ayrıntılı. Kısaca: hedef doğrulanabiliyorsa ve değişmediyse yapıştırılır; Wayland'da hedef kimliği alınamadığı için odaktaki pencereye yapıştırılır; hedef değiştiyse veya yapıştırma başarısızsa metin panoya alınır ve "Ctrl+V ile yapıştırın" denir. |
 | Kısayol | Wayland'da GlobalShortcuts portalı denenir; portal hatası, zaman aşımı veya bağlantı kaybında evdev/IPC yoluna dönülür. Klavye tak/çıkar için cihazlar yeniden taranır. |
 | Gösterge | Wayland GTK layer-shell yardımcısı ayrı giriş modu ve READY el sıkışmasıyla başlar; layer-shell desteklenmiyorsa veya yardımcı ölürse odak almayan Qt göstergesine dönülür. Paketlenmiş sürümler PyGObject içermediği için Qt göstergesini kullanır. |
 | Ayarlar ve anahtarlar | Şema sürümü, bilinmeyen alanların korunması, tek seferlik `config.previous.json` yedeği. API anahtarları işletim sistemi anahtar kasasında tutulur. Kasa kilitli/yoksa diğer ayarlar yine kaydedilir, mevcut anahtarlar olduğu gibi kalır; yalnız yeni veya değişen anahtar açıklamalı bir mesajla reddedilir (gizli düz metin geri dönüşü yok). |
 | Teşhis | İçerik taşımayan, boyutu sınırlı olay günlüğü, yerel çökme izi ve temiz olmayan çıkış tespiti (aşağıda). |
 | Sürekli kontrol | `uv.lock` + dışa aktarılmış pip kilidi, push/PR CI matrisi, lint, çekirdek tip denetimi, kapsama kapısı, paket smoke testi. |
+
+Groq ses tanıma ve metin düzenleme çağrılarında yalnız HTTP 429 (hız sınırı)
+yanıtı otomatik olarak bir kez yeniden denenir (çağrı başına en fazla iki istek).
+`Retry-After` veya `x-ratelimit-reset-*` süresi en fazla 15 saniye beklenir;
+geçerli başlık yoksa 1 saniye beklenir. Bekleme tepside “Hız sınırı, N sn sonra
+yeniden deneniyor” olarak gösterilir; iptal ve toplam iş süresi sınırı geçerlidir.
+Teşhise yalnız sayısal başlık değerleri yazılır. İkinci hata mevcut kurtarma
+yolunu kullanır; metin düzenlenemezse eksiksiz ham transkript Son Sonuç'ta
+korunur. Diğer hata türlerinde otomatik ücretli tekrar yapılmaz.
 
 ### Yapıştırma kuralları (platforma göre)
 

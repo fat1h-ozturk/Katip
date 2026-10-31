@@ -3,6 +3,7 @@
 from collections import deque
 import json
 import logging
+import math
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import sys
@@ -12,6 +13,9 @@ from uuid import uuid4
 
 _FIELDS = {"stage", "code", "source", "provider", "audio_bytes", "duration_ms", "errno", "exception_type",
            "sample_rate", "http_status", "request_bytes", "host", "network_error", "version"}
+_NUMERIC_FIELDS = {"retry_after_seconds", "ratelimit_limit_requests", "ratelimit_limit_tokens",
+                   "ratelimit_remaining_requests", "ratelimit_remaining_tokens",
+                   "ratelimit_reset_requests_seconds", "ratelimit_reset_tokens_seconds"}
 LOG_NAME = "diagnostics.jsonl"
 CRASH_LOG_NAME = "crash-traceback.log"
 _CRASH_LOG_LIMIT = 1024 * 1024
@@ -38,6 +42,9 @@ class Diagnostics:
                       "elapsed_ms": round((self._clock() - self._start) * 1000)}
             record.update({key: value for key, value in fields.items()
                            if key in _FIELDS and isinstance(value, (str, int, float, bool))})
+            record.update({key: value for key, value in fields.items()
+                           if key in _NUMERIC_FIELDS and type(value) in (int, float)
+                           and math.isfinite(value) and value >= 0})
             self._events.append(record)
             if self._logger:
                 self._logger.info(json.dumps(record, ensure_ascii=False))

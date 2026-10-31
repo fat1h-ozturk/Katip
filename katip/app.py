@@ -466,6 +466,9 @@ class KatipApp:
         job = self.session.job
         if event.kind == "phase":
             self.session.transition(event.value)
+        elif event.kind == "rate_limit_wait":
+            self.tray.showMessage("Kâtip", f"Hız sınırı, {event.value} sn sonra yeniden deneniyor",
+                                  QSystemTrayIcon.MessageIcon.Information, max(1000, event.value * 1000))
         elif event.kind == "retry_audio":
             self.pending_audio = event.value
             self._start_processing(event.value, auto_paste=False)

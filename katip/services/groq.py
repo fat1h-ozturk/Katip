@@ -8,9 +8,10 @@ from collections import Counter
 from dataclasses import replace
 
 import requests
-from ..infrastructure.http_transport import HttpSession
+from ..infrastructure.http_transport import HttpSession, current_job
 
 from .common import publish_transcript, formatting_stage, http_status_message
+from .groq_rate_limit import rate_limit_headers, retry_delay
 from ..domain.models import DictationResult
 from ..domain.errors import ProviderError, ConfigurationError
 from ..diagnostics import Diagnostics
@@ -101,6 +102,32 @@ class GroqService:
         self._session = HttpSession()
         self._session.headers.update({"Authorization": f"Bearer {self.api_key}"})
 
+    def _post(self, url, *, stage, **kwargs):
+        # Only an explicit rejection (429) is safe to retry automatically.
+        for attempt in range(2):
+            response = self._session.post(url, **kwargs)
+            if response.status_code != 429:
+                return response
+            headers = rate_limit_headers(getattr(response, "headers", {}))
+            self.diagnostics.event("rate_limited", stage=stage, http_status=429, **headers)
+            if attempt == 1:
+                return response
+            delay = retry_delay(headers)
+            job = current_job()
+            if job:
+                job.check()
+                if job.publish:
+                    job.publish("rate_limit_wait", math.ceil(delay))
+                # Keep cancellation/deadline responsive while waiting off the GUI thread.
+                remaining = delay
+                while remaining > 0:
+                    interval = min(.1, remaining)
+                    job.cancelled.wait(interval)
+                    job.check()
+                    remaining -= interval
+            else:
+                time.sleep(delay)
+
     def transcribe_and_format(self, audio_bytes: bytes, mode="dictation", custom_vocabulary=None,
                               language="tr", timeout=90, vocabulary_aliases=None) -> GroqResult:
         self.last_warning = ""
@@ -118,7 +145,7 @@ class GroqService:
             data["prompt"] = prompt
         self.diagnostics.event("stt_started", stage="stt", audio_bytes=len(audio_bytes))
         try:
-            response = self._session.post(GROQ_AUDIO_URL,
+            response = self._post(GROQ_AUDIO_URL, stage="stt",
                 files={"file": ("audio.wav", audio_bytes, "audio/wav")}, data=data, timeout=timeout)
         except requests.exceptions.Timeout:
             self.diagnostics.event("failed", stage="stt", code="NETWORK_TIMEOUT")
@@ -193,7 +220,7 @@ class GroqService:
             if self.llm_model == "qwen/qwen3.8-27b":
                 payload.update(reasoning_format="hidden", reasoning_effort="none")
             failure_detail = "Groq metin hizmetine bağlantı kurulamadı veya istek zaman aşımına uğradı."
-            response = self._session.post(GROQ_CHAT_URL, json=payload,
+            response = self._post(GROQ_CHAT_URL, stage="formatter", json=payload,
                 timeout=min(90, timeout))
             if response.status_code != 200:
                 # ASVS 16.5.1: report actionable status, never the private response body.
