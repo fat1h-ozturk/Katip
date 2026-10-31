@@ -1,7 +1,9 @@
 """Keep test imports and defaults away from the user's desktop state."""
 
+import gc
 import os
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -43,6 +45,24 @@ def block_desktop_side_effects(monkeypatch):
     monkeypatch.setattr(hotkey.HotkeyManager, "_start_macos_listener", deny)
     monkeypatch.setattr(hotkey.HotkeyManager, "_run_evdev_listener", deny)
     monkeypatch.setattr(hotkey.HotkeyManager, "_run_linux_listener", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+def free_qt_garbage_on_gui_thread():
+    """Destroy Qt objects a test left in reference cycles before any later worker thread runs.
+
+    Python's cyclic GC runs in whichever thread happens to allocate next. If that is a
+    later test's worker, a leftover widget's C++ destructor runs off the GUI thread:
+    Linux deadlocks in QWindow::close(), macOS crashed with 139 and the Windows release
+    job exited silently with 1 at the settings-dialog tests.
+    """
+    yield
+    if "PySide6.QtCore" not in sys.modules:
+        return
+    from PySide6.QtCore import QCoreApplication, QThread
+    app = QCoreApplication.instance()
+    if app is not None and QThread.currentThread() == app.thread():
+        gc.collect()
 
 
 @pytest.fixture
