@@ -126,12 +126,13 @@ def test_truncation_and_network_failure_keep_complete_input():
 def test_formatter_http_failure_reports_status_without_private_body(status):
     service = GroqService("fake", llm_model="llama-3.3-70b-versatile")
     response = MagicMock(status_code=status, text="SECRET PRIVATE TRANSCRIPT")
-    with patch.object(service._session, "post", return_value=response) as post:
+    with patch.object(service._session, "post", return_value=response) as post, \
+         patch("katip.services.groq.time.sleep"):
         result = service.format_transcript("Özgün metin")
     assert f"HTTP {status}" in result.warning
     assert "SECRET" not in result.warning and "PRIVATE" not in result.warning
     assert result.raw_transcript == "Özgün metin" and result.formatted_text is None
-    assert post.call_count == 1
+    assert post.call_count == (2 if status == 429 else 1)
     response.json.assert_not_called()
     if status == 404:
         assert "modeli bulunamadı" in result.warning

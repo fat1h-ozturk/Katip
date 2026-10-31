@@ -179,7 +179,8 @@ def test_groq_stt_status_messages_are_actionable(status, expected):
     from katip.services.groq import GroqService
     service = GroqService('fake')
     response = Mock(status_code=status, headers={'Retry-After': '12'})
-    with patch.object(service._session, 'post', return_value=response):
+    with patch.object(service._session, 'post', return_value=response), \
+         patch('katip.services.groq.time.sleep'):
         with pytest.raises(RuntimeError, match=expected):
             service.transcribe_and_format(b'RIFF')
 

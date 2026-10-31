@@ -67,6 +67,49 @@ def test_worker_does_not_write_ui_state_and_commit_releases_audio(tmp_path):
     app.recorder.discard_audio.assert_called_once()
 
 
+@pytest.mark.parametrize('second_status', [200, 429])
+def test_groq_rate_limit_wait_is_shown_in_tray_and_result_keeps_recovery_contract(
+        tmp_path, monkeypatch, second_status):
+    import json
+    from katip.infrastructure.http_transport import Response
+    from katip.services.groq import GroqService
+    app, _ = make_app(tmp_path)
+    app.config.data['provider'] = 'groq'
+    app.session.job.settings['provider'] = 'groq'
+    monkeypatch.setattr(app.session.job.cancelled, 'wait', lambda _: False)
+    service = GroqService('fake')
+    limited = Response(429, b'{}', {'retry-after': '0.01'})
+    success = Response(200, json.dumps({'choices': [{'finish_reason': 'stop',
+        'message': {'content': '{"text":"Düzenlenmiş."}'}}]}).encode(), {})
+    post = Mock(side_effect=[Response(200, '{"text":"Eksiksiz ham metin."}'.encode(), {}),
+                             limited, success if second_status == 200 else limited])
+    monkeypatch.setattr(service._session, 'post', post)
+    app._service = Mock(return_value=service)
+    app._start_processing(app.pending_audio, auto_paste=False)
+    app.tray.showMessage.assert_not_called()  # GUI events are still queued.
+    drain(app)
+    messages = [call.args[1] for call in app.tray.showMessage.call_args_list]
+    assert 'Hız sınırı, 1 sn sonra yeniden deneniyor' in messages
+    assert post.call_count == 3
+    assert app.last_groq_result.raw_transcript == 'Eksiksiz ham metin.'
+    app.injector.inject_text.assert_not_called()
+    if second_status == 200:
+        assert app.last_text == 'Düzenlenmiş.' and app.session.state == State.READY
+        assert app.last_error == 'Metin hazır. Son Sonuç menüsünden kopyalayabilirsiniz.'
+        assert not app.last_groq_result.warning
+    else:
+        assert app.last_text == 'Eksiksiz ham metin.' and app.session.state == State.ERROR
+        assert 'HTTP 429' in app.last_error and 'Son Sonuç' in app.last_error
+        assert 'eksiksiz ham transkript korundu' in app.last_error
+        assert app.pending_audio
+
+
+def test_stale_rate_limit_wait_does_not_notify_current_job(tmp_path):
+    app, _ = make_app(tmp_path)
+    app._on_work_event(JobEvent('stale-job', 0, 'rate_limit_wait', 5))
+    app.tray.showMessage.assert_not_called()
+
+
 def test_failed_injection_never_reports_success_and_keeps_result(tmp_path):
     app, _ = make_app(tmp_path)
     app.injector.inject_text.return_value = False
